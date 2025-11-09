@@ -385,24 +385,25 @@ export default function Payments() {
       }
     }
 
-    setFormData({
-      assignment_id: payment.assignment_id || '',
-      amount: baseAmount.toString(),
-      payment_date: payment.payment_date,
-      payment_for_month: isDailyBilling ? '' : paymentForMonth,
-      includes_gst: payment.includes_gst,
-      gst_amount: (payment.gst_amount || 0).toString(),
-      destination: payment.destination || '',
-      reference_number: payment.reference_number || '',
-      notes: notesWithoutDailyDetails,
-      number_of_days: numberOfDays,
-      rent_for_dates: rentForDates,
-      is_manual_entry: false,
-      manual_space_type: '',
-      manual_customer_name: '',
-      manual_space_name: '',
-      manual_daily_rate: '',
-    })
+ setFormData({
+    assignmentid: payment.assignment_id || '',
+    amount: baseAmount.toString(),
+    paymentdate: payment.payment_date,
+    paymentformonth: isDailyBilling ? '' : paymentForMonth,
+    includesgst: payment.includes_gst,
+    gstamount: (payment.gst_amount || 0).toString(),
+    destination: payment.destination || '',
+    referencenumber: payment.reference_number || '',
+    notes: notesWithoutDailyDetails,
+    numberofdays: numberOfDays,
+    rentfordates: rentForDates,
+    ismanualentry: false,
+    manualspacetype: '',
+    manualcustomername: '',
+    manualspacename: '',
+    manualdailyrate: '',
+});
+
     setShowModal(true)
   }
 
