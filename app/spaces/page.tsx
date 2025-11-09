@@ -1,10 +1,11 @@
-import Dashboard from '@/components/Dashboard'
+import Spaces from '@/components/Spaces'
 import ProtectedRoute from '@/components/ProtectedRoute'
 
-export default function Home() {
+export default function SpacesPage() {
   return (
     <ProtectedRoute>
-      <Dashboard />
+      <Spaces />
     </ProtectedRoute>
   )
 }
+

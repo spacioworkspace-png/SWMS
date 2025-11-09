@@ -1,10 +1,11 @@
-import Dashboard from '@/components/Dashboard'
+import Customers from '@/components/Customers'
 import ProtectedRoute from '@/components/ProtectedRoute'
 
-export default function Home() {
+export default function CustomersPage() {
   return (
     <ProtectedRoute>
-      <Dashboard />
+      <Customers />
     </ProtectedRoute>
   )
 }
+

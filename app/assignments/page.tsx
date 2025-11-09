@@ -1,10 +1,11 @@
-import Dashboard from '@/components/Dashboard'
+import Assignments from '@/components/Assignments'
 import ProtectedRoute from '@/components/ProtectedRoute'
 
-export default function Home() {
+export default function AssignmentsPage() {
   return (
     <ProtectedRoute>
-      <Dashboard />
+      <Assignments />
     </ProtectedRoute>
   )
 }
+

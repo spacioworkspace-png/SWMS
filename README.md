@@ -1,36 +1,129 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Coworking Space Manager
 
-## Getting Started
+A comprehensive web application for managing coworking spaces, customers, assignments, and payments with Supabase integration.
 
-First, run the development server:
+## Features
+
+- **Space Management**: CRUD operations for 5 types of spaces (Cabin, Desk, Meeting Room, Virtual Office, Day Pass)
+- **Customer Management**: Complete customer database with GST tracking
+- **Assignment System**: Assign customers to spaces with date tracking
+- **Payment Tracking**: Track payments with GST support, payment dates, and destinations
+- **Dashboard**: Overview statistics and recent payments
+
+## Setup Instructions
+
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Set Up Supabase
+
+1. Create a new project at [Supabase](https://supabase.com)
+2. Go to SQL Editor and run the SQL script from `supabase-schema.sql`
+3. Get your project URL and anon key from Settings > API
+
+### 3. Configure Environment Variables
+
+Create a `.env.local` file in the root directory:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+### 4. Run the Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Database Schema
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The application uses the following tables:
 
-## Learn More
+- **spaces**: Space information (name, type, capacity, price, availability)
+- **customers**: Customer information (name, contact, company, GST status)
+- **assignments**: Customer-to-space assignments with dates
+- **payments**: Payment records with GST tracking, dates, and destinations
 
-To learn more about Next.js, take a look at the following resources:
+## Features in Detail
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Space Management
+- Create, read, update, and delete spaces
+- Support for 5 space types: Cabin, Desk, Meeting Room, Virtual Office, Day Pass
+- Track capacity and pricing per day
+- Mark spaces as available/unavailable
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Customer Management
+- Complete customer profiles
+- Track GST status (pays GST or not)
+- Company and contact information
+- Tax ID tracking
 
-## Deploy on Vercel
+### Assignment System
+- Assign customers to spaces
+- Track start and end dates
+- Status tracking (active, inactive, completed)
+- Notes for each assignment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Payment Tracking
+- Record payments with amount and dates
+- Track payment date and payment-for date
+- GST calculation (10% rate, adjustable in code)
+- Payment destination tracking
+- Payment method selection
+- Reference number tracking
+- Link payments to assignments
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Dashboard
+- Total spaces and availability
+- Customer count
+- Active assignments
+- Total payments
+- Monthly revenue
+- Occupancy rate
+- Recent payments list
+
+## Technologies Used
+
+- Next.js 16 (App Router)
+- React 19
+- TypeScript
+- Tailwind CSS
+- Supabase (PostgreSQL)
+- date-fns
+
+## Project Structure
+
+```
+coworking-space-manager/
+├── app/
+│   ├── layout.tsx          # Root layout with navigation
+│   ├── page.tsx             # Dashboard page
+│   ├── spaces/              # Spaces management page
+│   ├── customers/           # Customers management page
+│   ├── assignments/         # Assignments management page
+│   └── payments/            # Payments management page
+├── components/
+│   ├── Navigation.tsx       # Navigation component
+│   ├── Dashboard.tsx        # Dashboard component
+│   ├── Spaces.tsx           # Spaces CRUD component
+│   ├── Customers.tsx        # Customers CRUD component
+│   ├── Assignments.tsx      # Assignments CRUD component
+│   └── Payments.tsx         # Payments CRUD component
+├── lib/
+│   └── supabase.ts          # Supabase client configuration
+├── types/
+│   └── index.ts             # TypeScript type definitions
+└── supabase-schema.sql      # Database schema SQL script
+```
+
+## Notes
+
+- GST rate is set to 10% in the Payments component. Adjust the `calculateGST` function if needed.
+- All dates are stored in UTC and displayed in local timezone.
+- The application uses Supabase Row Level Security (RLS) - make sure to configure policies as needed for your use case.
