@@ -432,6 +432,7 @@ export default function Payments() {
       }
     }
 
+<<<<<<< HEAD
     setFormData({
       assignment_id: payment.assignment_id || '',
       amount: baseAmount.toString(), // Store base amount
@@ -450,6 +451,27 @@ export default function Payments() {
       manual_space_name: '',
       manual_daily_rate: '',
     })
+=======
+ setFormData({
+    assignmentid: payment.assignment_id || '',
+    amount: baseAmount.toString(),
+    paymentdate: payment.payment_date,
+    paymentformonth: isDailyBilling ? '' : paymentForMonth,
+    includesgst: payment.includes_gst,
+    gstamount: (payment.gst_amount || 0).toString(),
+    destination: payment.destination || '',
+    referencenumber: payment.reference_number || '',
+    notes: notesWithoutDailyDetails,
+    numberofdays: numberOfDays,
+    rentfordates: rentForDates,
+    ismanualentry: false,
+    manualspacetype: '',
+    manualcustomername: '',
+    manualspacename: '',
+    manualdailyrate: '',
+});
+
+>>>>>>> 26e755e892b1a7bba3c4f0aa06b2bedab0d24506
     setShowModal(true)
   }
 
