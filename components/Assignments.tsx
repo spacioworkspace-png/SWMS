@@ -79,8 +79,13 @@ export default function Assignments() {
     }
 
     // Rent status filter (pending/received) - only applies to active assignments
+    // Exclude 'Virtual Office' from rent status categorization entirely
     if (rentStatusFilter !== 'all') {
       filtered = filtered.filter((assignment: any) => {
+        const space = assignment.space as Space
+        if (space?.type === 'Virtual Office') {
+          return false
+        }
         // Only filter active assignments by rent status
         if (assignment.status !== 'active') {
           // For non-active assignments, don't show when filtering by rent status

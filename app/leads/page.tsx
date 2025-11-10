@@ -1,10 +1,10 @@
-import PaymentsNew from '@/components/PaymentsNew'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import Leads from '@/components/Leads'
 
-export default function PaymentsPage() {
+export default function LeadsPage() {
   return (
     <ProtectedRoute>
-      <PaymentsNew />
+      <Leads />
     </ProtectedRoute>
   )
 }

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -24,6 +26,9 @@ export default function Dashboard() {
     baseWithGST: 0, // Total base amount for payments with GST
     totalGSTCollected: 0, // Total GST collected
     monthlyBaseFromAssignments: 0, // Total monthly base revenue from all active assignments
+    activeByCategory: [] as { type: string; count: number }[],
+    monthlyPaymentsList: [] as any[],
+    monthlyLeadsCount: 0,
   })
   const [loading, setLoading] = useState(true)
 
@@ -46,8 +51,9 @@ export default function Dashboard() {
         recentPaymentsResult,
         activeAssignmentsWithSpacesResult,
         allAssignmentsResult, // Fetch all assignments to match with payments
+        leadsThisMonthResult,
       ] = await Promise.all([
-        supabase.from('spaces').select('id, is_available, price_per_day'),
+        supabase.from('spaces').select('id, name, type, is_available, price_per_day'),
         supabase.from('customers').select('id'),
         supabase.from('assignments').select('id, status').eq('status', 'active'),
         supabase.from('payments').select('amount'),
@@ -75,12 +81,16 @@ export default function Dashboard() {
             id,
             monthly_price,
             status,
-            space:spaces(id, name, price_per_day, is_available)
+            space:spaces(id, name, type, price_per_day, is_available)
           `)
           .eq('status', 'active'),
         supabase
           .from('assignments')
           .select('id, payment_destination, monthly_price, includes_gst'), // Fetch all assignments with payment_destination and pricing
+        supabase
+          .from('leads')
+          .select('id')
+          .gte('created_at', startOfMonth),
       ])
 
       if (spacesResult.error) throw spacesResult.error
@@ -91,6 +101,7 @@ export default function Dashboard() {
       if (recentPaymentsResult.error) throw recentPaymentsResult.error
       if (activeAssignmentsWithSpacesResult.error) throw activeAssignmentsWithSpacesResult.error
       if (allAssignmentsResult.error) throw allAssignmentsResult.error
+      if (leadsThisMonthResult.error) throw leadsThisMonthResult.error
 
       // Create a map of assignment_id to payment_destination for quick lookup
       const assignmentDestinationMap = new Map<string, string>()
@@ -103,14 +114,14 @@ export default function Dashboard() {
       }
 
       const totalSpaces = spacesResult.data?.length || 0
-      const availableSpaces = spacesResult.data?.filter((s) => s.is_available).length || 0
+      const availableSpaces = spacesResult.data?.filter((s: any) => s.is_available).length || 0
       const occupiedSpaces = totalSpaces - availableSpaces
       
-      // Calculate vacant value (sum of monthly rent for available spaces)
+      // Calculate vacant value (sum of price for available spaces), exclude Virtual Office
       const vacantValue = spacesResult.data
-        ?.filter((s) => s.is_available)
-        .reduce((sum, s) => {
-          const price = s.price_per_day != null && !isNaN(s.price_per_day) ? Number(s.price_per_day) : 0
+        ?.filter((s: any) => s.is_available && s.type !== 'Virtual Office')
+        .reduce((sum: number, s: any) => {
+          const price = s.price_per_day != null && !isNaN(Number(s.price_per_day)) ? Number(s.price_per_day) : 0
           return sum + price
         }, 0) || 0
 
@@ -152,9 +163,12 @@ export default function Dashboard() {
       }, 0)
 
       const totalGSTCollected = monthlyPayments.reduce((sum, p) => sum + (p.gst_amount || 0), 0)
+      const monthlyLeadsCount = leadsThisMonthResult.data?.length || 0
 
-      // Calculate monthly base revenue from all active assignments
-      const monthlyBaseFromAssignments = (activeAssignmentsWithSpacesResult.data || []).reduce((sum, assignment: any) => {
+      // Calculate monthly base revenue from all active assignments (exclude Virtual Office)
+      const monthlyBaseFromAssignments = (activeAssignmentsWithSpacesResult.data || [])
+        .filter((assignment: any) => assignment.space?.type !== 'Virtual Office')
+        .reduce((sum, assignment: any) => {
         // Get monthly price from assignment or space, handling null/undefined/NaN
         let monthlyPrice = 0
         
@@ -230,6 +244,15 @@ export default function Dashboard() {
         }))
         .sort((a, b) => b.amount - a.amount)
 
+      // Build active assignments by category (space.type)
+      const categoryMap = new Map<string, number>()
+      ;(activeAssignmentsWithSpacesResult.data || []).forEach((a: any) => {
+        const t = a.space?.type || 'Unknown'
+        categoryMap.set(t, (categoryMap.get(t) || 0) + 1)
+      })
+      const activeByCategory = Array.from(categoryMap.entries()).map(([type, count]) => ({ type, count }))
+        .sort((a, b) => b.count - a.count)
+
       setStats({
         totalSpaces,
         availableSpaces,
@@ -248,6 +271,9 @@ export default function Dashboard() {
         baseWithGST,
         totalGSTCollected,
         monthlyBaseFromAssignments,
+        activeByCategory,
+        monthlyPaymentsList: monthlyPayments,
+        monthlyLeadsCount,
       })
     } catch (error: any) {
       alert('Error fetching dashboard data: ' + error.message)
@@ -256,13 +282,108 @@ export default function Dashboard() {
     }
   }
 
+  const generateMonthlyReport = () => {
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthName = startOfMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+    const doc = new jsPDF()
+
+    // Header
+    doc.setFillColor(99, 102, 241)
+    doc.rect(0, 0, 210, 36, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(20)
+    doc.text('Spacio Workspace', 14, 18)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(12)
+    doc.text(`Monthly Report — ${monthName}`, 14, 28)
+
+    // Summary block
+    doc.setTextColor(0, 0, 0)
+    doc.setFontSize(12)
+    const summaryY = 46
+    doc.text('Summary', 14, summaryY)
+    const lines = [
+      `Total Payments: ${stats.monthlyPaymentsList.length}`,
+      `Base Revenue (No GST): ${formatCurrency(stats.monthlyBaseRevenue)}`,
+      `GST Collected: ${formatCurrency(stats.monthlyGST)}`,
+      `Total Revenue (Incl. GST): ${formatCurrency(stats.monthlyRevenue)}`,
+      `Expected Monthly Base from Assignments: ${formatCurrency(stats.monthlyBaseFromAssignments)}`,
+    ]
+    lines.forEach((t, i) => doc.text(t, 14, summaryY + 8 + i * 6))
+
+    // Payments table
+    const paymentsTableStart = summaryY + 8 + lines.length * 6 + 6
+    const paymentsBody = (stats.monthlyPaymentsList || []).map((p: any) => [
+      p.customer?.first_name && p.customer?.last_name ? `${p.customer.first_name} ${p.customer.last_name}` : p.customer?.name || '-',
+      formatCurrency((p.amount || 0) - (p.gst_amount || 0)),
+      p.includes_gst ? formatCurrency(p.gst_amount || 0) : '-',
+      formatCurrency(p.amount || 0),
+      new Date(p.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      p.destination || '-',
+    ])
+    autoTable(doc, {
+      startY: paymentsTableStart,
+      head: [['Customer', 'Base', 'GST', 'Total', 'Date', 'Destination']],
+      body: paymentsBody,
+      theme: 'striped',
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+    })
+
+    // Category table
+    const afterPaymentsY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : paymentsTableStart
+    const categoryBody = (stats.activeByCategory || []).map((c) => [c.type, c.count.toString()])
+    autoTable(doc, {
+      startY: afterPaymentsY,
+      head: [['Space Type', 'Active Assignments']],
+      body: categoryBody,
+      theme: 'grid',
+      styles: { fontSize: 9 },
+    })
+
+    // Destination table
+    const afterCatY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : afterPaymentsY
+    const destBody = (stats.paymentByDestination || []).map((d) => [d.destination, formatCurrency(d.amount), d.count.toString()])
+    autoTable(doc, {
+      startY: afterCatY,
+      head: [['Destination', 'Total Amount', 'Payments']],
+      body: destBody,
+      theme: 'grid',
+      styles: { fontSize: 9 },
+      columnStyles: { 0: { cellWidth: 70 } },
+    })
+
+    // Footer
+    const pageCount = doc.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(8)
+      doc.setTextColor(128, 128, 128)
+      doc.text(`Page ${i} of ${pageCount} | Generated on ${new Date().toLocaleDateString('en-US')}`, 105, 287, { align: 'center' })
+    }
+
+    doc.save(`Spacio-Monthly-Report-${monthName.replace(' ', '-')}.pdf`)
+  }
+
   if (loading) {
     return <div className="p-8 text-center animate-pulse">Loading...</div>
   }
 
   return (
     <div className="p-8 animate-fade-in">
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <button
+          onClick={generateMonthlyReport}
+          className="bg-gradient-to-r from-green-500 to-green-600 text-white px-5 py-2 rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md font-semibold flex items-center"
+        >
+          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          Generate Monthly Report
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
@@ -304,6 +425,14 @@ export default function Dashboard() {
           <p className="text-3xl font-bold">{stats.totalPayments}</p>
           <Link href="/payments" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
             View all →
+          </Link>
+        </div>
+
+        <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+          <h3 className="text-sm font-medium mb-2 opacity-90">Leads (This Month)</h3>
+          <p className="text-3xl font-bold">{stats.monthlyLeadsCount}</p>
+          <Link href="/leads" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
+            View leads →
           </Link>
         </div>
 
@@ -461,6 +590,37 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Active Spaces by Category */}
+      <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden animate-fade-in mb-8">
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-violet-50 to-white">
+          <h2 className="text-xl font-bold text-gray-900">Active Spaces by Category</h2>
+          <p className="text-sm text-gray-500 mt-1">Count of active assignments grouped by space type</p>
+        </div>
+        <div className="p-6">
+          {stats.activeByCategory.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {stats.activeByCategory.map((item, index) => (
+                <div
+                  key={`${item.type}-${index}`}
+                  className="bg-gradient-to-br from-violet-50 to-white rounded-xl p-5 border-2 border-violet-100 hover:shadow-md transition-all animate-scale-in"
+                  style={{ animationDelay: `${index * 0.06}s` }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-semibold text-gray-700">{item.type}</h3>
+                    <span className="px-2 py-1 text-xs font-bold rounded-full bg-violet-200 text-violet-800">
+                      {item.count}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">Active assignments</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500">No active assignments by category to display</div>
+          )}
+        </div>
+      </div>
 
       {/* GST Breakdown Section */}
       <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden animate-fade-in mb-8">

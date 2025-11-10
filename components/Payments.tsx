@@ -36,10 +36,15 @@ export default function Payments() {
     destination: '',
     reference_number: '',
     notes: '',
+    // Daily billing fields for Day Pass and Meeting Room
     number_of_days: '1',
-    rent_for_dates: '',
+    rent_for_dates: '', // Comma-separated dates or date range
+    // Manual entry fields for Day Pass and Meeting Room
     is_manual_entry: false,
-    manual_space_type: '' as 'Day Pass' | 'Meeting Room' | 'Virtual Office' | '',
+    manual_space_type: '' as 'Day Pass' | 'Meeting Room' | '',
+    manual_customer_name: '',
+    manual_space_name: '',
+    manual_daily_rate: '',
   })
 
   const destinationOptions = [
@@ -62,6 +67,7 @@ export default function Payments() {
       const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay())).toISOString().split('T')[0]
       const today = new Date().toISOString().split('T')[0]
 
+      // Fetch payments with related data
       const { data: paymentsData, error: paymentsError } = await supabase
         .from('payments')
         .select(`
@@ -76,6 +82,7 @@ export default function Payments() {
 
       if (paymentsError) throw paymentsError
 
+      // Fetch customers, assignments, and spaces for dropdowns
       const [customersResult, assignmentsResult, spacesResult] = await Promise.all([
         supabase.from('customers').select('*').order('name'),
         supabase
@@ -97,6 +104,7 @@ export default function Payments() {
       setAssignments(assignmentsResult.data || [])
       setSpaces(spacesResult.data || [])
 
+      // Calculate dashboard stats
       const monthlyPayments = paymentsData?.filter((p) => p.payment_date >= startOfMonth) || []
       const weeklyPayments = paymentsData?.filter((p) => p.payment_date >= startOfWeek) || []
       const todayPayments = paymentsData?.filter((p) => p.payment_date === today) || []
@@ -124,6 +132,7 @@ export default function Payments() {
 
   const calculateGST = (amount: number, includesGST: boolean) => {
     if (!includesGST) return 0
+    // GST rate is 18%
     return amount * 0.18
   }
 
@@ -149,19 +158,31 @@ export default function Payments() {
 
   const handleDaysChange = (days: string) => {
     const daysNum = parseInt(days) || 1
-    const selectedAssignment = assignments.find((a) => a.id === formData.assignment_id)
-    if (selectedAssignment) {
-      const space = (selectedAssignment.space as Space) || spaces.find((s) => s.id === selectedAssignment.space_id)
-      if (space && getBillingCycle(space.type) === 'daily') {
-        const dailyPrice = space.price_per_day || 0
-        const totalAmount = dailyPrice * daysNum
-        const gstAmount = formData.includes_gst ? calculateGST(totalAmount, true) : 0
-        setFormData({
-          ...formData,
-          number_of_days: days,
-          amount: totalAmount.toString(),
-          gst_amount: gstAmount.toFixed(2),
-        })
+    if (formData.is_manual_entry) {
+      const dailyPrice = parseFloat(formData.manual_daily_rate) || 0
+      const totalAmount = dailyPrice * daysNum
+      const gstAmount = formData.includes_gst ? calculateGST(totalAmount, true) : 0
+      setFormData({
+        ...formData,
+        number_of_days: days,
+        amount: totalAmount.toString(),
+        gst_amount: gstAmount.toFixed(2),
+      })
+    } else {
+      const selectedAssignment = assignments.find((a) => a.id === formData.assignment_id)
+      if (selectedAssignment) {
+        const space = (selectedAssignment.space as Space) || spaces.find((s) => s.id === selectedAssignment.space_id)
+        if (space && getBillingCycle(space.type) === 'daily') {
+          const dailyPrice = space.price_per_day || 0
+          const totalAmount = dailyPrice * daysNum
+          const gstAmount = formData.includes_gst ? calculateGST(totalAmount, true) : 0
+          setFormData({
+            ...formData,
+            number_of_days: days,
+            amount: totalAmount.toString(),
+            gst_amount: gstAmount.toFixed(2),
+          })
+        }
       }
     }
   }
@@ -187,6 +208,8 @@ export default function Payments() {
       const billingCycle = space ? getBillingCycle(space.type) : 'monthly'
       const isDailyBilling = billingCycle === 'daily'
       
+      // For daily billing (Day Pass, Meeting Room), use price_per_day * number_of_days
+      // For monthly/yearly, use monthly_price or price_per_day
       let basePrice = 0
       if (isDailyBilling) {
         const dailyPrice = space?.price_per_day || 0
@@ -198,11 +221,19 @@ export default function Payments() {
       
       const customer = customers.find((c) => c.id === assignment.customer_id)
       const customerPaysGST = customer?.pays_gst || false
+      // GST is additional (18% of base amount)
       const gstAmount = customerPaysGST ? calculateGST(basePrice, true) : 0
       
+      // Get payment destination from assignment if available
       const paymentDestination = (assignment as any).payment_destination || ''
+
+      // Set default payment date to today
       const today = new Date().toISOString().split('T')[0]
+      
+      // Set default payment_for_month to current month (YYYY-MM format)
       const currentMonth = new Date().toISOString().slice(0, 7)
+      
+      // For daily billing, set default rent_for_dates to today
       const defaultRentForDates = isDailyBilling ? today : ''
 
       setFormData({
@@ -211,9 +242,9 @@ export default function Payments() {
         amount: basePrice > 0 ? basePrice.toString() : '',
         includes_gst: customerPaysGST,
         gst_amount: gstAmount.toFixed(2),
-        destination: paymentDestination,
-        payment_date: formData.payment_date || today,
-        payment_for_month: isDailyBilling ? '' : (formData.payment_for_month || currentMonth),
+        destination: paymentDestination, // Auto-fill payment destination from assignment
+        payment_date: formData.payment_date || today, // Auto-fill with today if not already set
+        payment_for_month: isDailyBilling ? '' : (formData.payment_for_month || currentMonth), // Only set for monthly/yearly
         number_of_days: isDailyBilling ? (formData.number_of_days || '1') : '1',
         rent_for_dates: isDailyBilling ? (formData.rent_for_dates || defaultRentForDates) : '',
       })
@@ -231,21 +262,18 @@ export default function Payments() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      // Handle manual entry for Day Pass and Meeting Room
       if (formData.is_manual_entry) {
-        if (!formData.manual_space_type || !formData.amount) {
-          alert('Please fill in all required fields')
+        if (!formData.manual_space_type) {
+          alert('Please select space type')
+          return
+        }
+        if (!formData.amount) {
+          alert('Please enter amount')
           return
         }
         if (!formData.destination) {
           alert('Please select a payment destination')
-          return
-        }
-        if (!formData.payment_date) {
-          alert('Please select a payment date')
-          return
-        }
-        if (!formData.payment_for_month) {
-          alert('Please select payment for month')
           return
         }
 
@@ -253,17 +281,18 @@ export default function Payments() {
         const gstAmount = formData.includes_gst ? parseFloat(formData.gst_amount) || 0 : 0
         const totalAmount = baseAmount + gstAmount
 
+        // For manual entry, create a payment without assignment_id
         const paymentData = {
-          customer_id: null,
-          assignment_id: null,
+          customer_id: null, // No customer ID for manual entry
+          assignment_id: null, // No assignment for manual entry
           amount: totalAmount,
           payment_date: formData.payment_date,
-          payment_for_date: `${formData.payment_for_month}-01`,
+          payment_for_date: formData.rent_for_dates || formData.payment_date, // Use entered date(s) or payment date
           includes_gst: formData.includes_gst,
           gst_amount: gstAmount,
           destination: formData.destination,
           reference_number: formData.reference_number || null,
-          notes: `Manual Entry - ${formData.manual_space_type}${formData.notes ? `\n${formData.notes}` : ''}`,
+          notes: `Manual Entry - ${formData.manual_space_type}${formData.rent_for_dates ? `, For: ${formData.rent_for_dates}` : ''}${formData.notes ? `\n${formData.notes}` : ''}`,
         }
 
         const { error } = await supabase.from('payments').insert([paymentData])
@@ -276,15 +305,22 @@ export default function Payments() {
         return
       }
 
+      // Regular assignment-based payment
+      // Convert payment_for_month (YYYY-MM) to payment_for_date (first day of month)
+      // For daily billing, use rent_for_dates if available, otherwise use payment_date
       let paymentForDate = ''
       if (selectedSpace && getBillingCycle(selectedSpace.type) === 'daily') {
+        // For daily billing, use rent_for_dates or payment_date
         paymentForDate = formData.rent_for_dates || formData.payment_date || new Date().toISOString().split('T')[0]
       } else {
+        // For monthly/yearly billing, use payment_for_month
         paymentForDate = formData.payment_for_month
           ? `${formData.payment_for_month}-01`
           : new Date().toISOString().split('T')[0]
       }
 
+      // If GST is included, the amount stored is the base amount, GST is additional
+      // Total payment = base amount + GST amount
       const baseAmount = parseFloat(formData.amount) || 0
       const gstAmount = formData.includes_gst ? parseFloat(formData.gst_amount) || 0 : 0
       const totalAmount = baseAmount + gstAmount
@@ -294,6 +330,7 @@ export default function Payments() {
         return
       }
 
+      // Ensure destination is set - use form value, assignment default, or empty string
       const destination = formData.destination || (selectedAssignment as any).payment_destination || null
       
       if (!destination) {
@@ -301,6 +338,7 @@ export default function Payments() {
         return
       }
 
+      // Build notes with daily billing details if applicable
       let notes = formData.notes || ''
       if (selectedSpace && getBillingCycle(selectedSpace.type) === 'daily') {
         const dailyDetails = `Days: ${formData.number_of_days}, Rent For: ${formData.rent_for_dates}`
@@ -310,12 +348,12 @@ export default function Payments() {
       const paymentData = {
         customer_id: selectedAssignment.customer_id,
         assignment_id: formData.assignment_id,
-        amount: totalAmount,
+        amount: totalAmount, // Store total amount (base + GST)
         payment_date: formData.payment_date,
         payment_for_date: paymentForDate,
         includes_gst: formData.includes_gst,
-        gst_amount: gstAmount,
-        destination: destination,
+        gst_amount: gstAmount, // Store GST amount separately
+        destination: destination, // Always set destination
         reference_number: formData.reference_number || null,
         notes: notes || null,
       }
@@ -343,23 +381,29 @@ export default function Payments() {
 
   const handleEdit = (payment: Payment) => {
     setEditingPayment(payment)
+    // Convert payment_for_date to payment_for_month (YYYY-MM format)
     const paymentForMonth = payment.payment_for_date
       ? payment.payment_for_date.substring(0, 7)
       : ''
     
+    // If GST was included, extract base amount from total
+    // Total = base + GST, so base = total - GST
     const baseAmount = payment.includes_gst
       ? payment.amount - (payment.gst_amount || 0)
       : payment.amount
 
+    // Check if this is a daily billing payment by looking at the assignment
     const assignment = assignments.find((a) => a.id === payment.assignment_id)
     const space = assignment ? ((assignment.space as Space) || spaces.find((s) => s.id === assignment.space_id)) : null
     const isDailyBilling = space ? getBillingCycle(space.type) === 'daily' : false
     
+    // Extract number of days and rent_for_dates from notes if available, or calculate from amount
     let numberOfDays = '1'
     let rentForDates = ''
     let notesWithoutDailyDetails = payment.notes || ''
     
     if (isDailyBilling && space) {
+      // Try to extract from notes first
       if (payment.notes) {
         const daysMatch = payment.notes.match(/Days:\s*(\d+)/i)
         const rentForMatch = payment.notes.match(/Rent For:\s*([^\n]+)/i)
@@ -367,6 +411,7 @@ export default function Payments() {
         if (daysMatch) {
           numberOfDays = daysMatch[1]
         } else {
+          // Calculate days from amount
           const dailyPrice = space.price_per_day || 1
           numberOfDays = Math.ceil(baseAmount / dailyPrice).toString()
         }
@@ -377,8 +422,10 @@ export default function Payments() {
           rentForDates = payment.payment_for_date || payment.payment_date
         }
         
+        // Remove daily details from notes
         notesWithoutDailyDetails = payment.notes.replace(/Days:\s*\d+,\s*Rent For:\s*[^\n]+/i, '').trim()
       } else {
+        // Calculate days from amount if no notes
         const dailyPrice = space.price_per_day || 1
         numberOfDays = Math.ceil(baseAmount / dailyPrice).toString()
         rentForDates = payment.payment_for_date || payment.payment_date
@@ -387,7 +434,7 @@ export default function Payments() {
 
     setFormData({
       assignment_id: payment.assignment_id || '',
-      amount: baseAmount.toString(),
+      amount: baseAmount.toString(), // Store base amount
       payment_date: payment.payment_date,
       payment_for_month: isDailyBilling ? '' : paymentForMonth,
       includes_gst: payment.includes_gst,
@@ -397,7 +444,7 @@ export default function Payments() {
       notes: notesWithoutDailyDetails,
       number_of_days: numberOfDays,
       rent_for_dates: rentForDates,
-      is_manual_entry: false,
+      is_manual_entry: false, // Payments from database are not manual entries
       manual_space_type: '',
       manual_customer_name: '',
       manual_space_name: '',
@@ -419,14 +466,15 @@ export default function Payments() {
   }
 
   const resetForm = () => {
+    // Set defaults: today's date and current month
     const today = new Date().toISOString().split('T')[0]
     const currentMonth = new Date().toISOString().slice(0, 7)
     
     setFormData({
       assignment_id: '',
       amount: '',
-      payment_date: today,
-      payment_for_month: currentMonth,
+      payment_date: today, // Default to today
+      payment_for_month: currentMonth, // Default to current month
       includes_gst: false,
       gst_amount: '0',
       destination: '',
@@ -436,6 +484,9 @@ export default function Payments() {
       rent_for_dates: '',
       is_manual_entry: false,
       manual_space_type: '',
+      manual_customer_name: '',
+      manual_space_name: '',
+      manual_daily_rate: '',
     })
   }
 
@@ -451,7 +502,8 @@ export default function Payments() {
 
     const doc = new jsPDF()
     
-    doc.setFillColor(255, 152, 0)
+    // Header with gradient effect (simulated)
+    doc.setFillColor(255, 152, 0) // Orange
     doc.rect(0, 0, 210, 40, 'F')
     
     doc.setTextColor(255, 255, 255)
@@ -463,8 +515,10 @@ export default function Payments() {
     doc.setFont('helvetica', 'normal')
     doc.text(`Monthly Payment Report - ${monthName}`, 105, 30, { align: 'center' })
     
+    // Reset text color
     doc.setTextColor(0, 0, 0)
     
+    // Summary section
     const totalRevenue = monthlyPayments.reduce((sum, p) => sum + p.amount, 0)
     const totalGST = monthlyPayments.reduce((sum, p) => sum + (p.gst_amount || 0), 0)
     const totalBase = totalRevenue - totalGST
@@ -480,6 +534,7 @@ export default function Payments() {
     doc.text(`Total GST (18%): ${formatCurrency(totalGST)}`, 14, 70)
     doc.text(`Total Revenue: ${formatCurrency(totalRevenue)}`, 14, 76)
     
+    // Table data
     const tableData = monthlyPayments.map((payment) => {
       const customer = payment.customer as Customer
       const assignment = payment.assignment as Assignment
@@ -505,12 +560,12 @@ export default function Payments() {
       body: tableData,
       theme: 'striped',
       headStyles: {
-        fillColor: [255, 152, 0],
+        fillColor: [255, 152, 0], // Orange
         textColor: [255, 255, 255],
         fontStyle: 'bold',
       },
       alternateRowStyles: {
-        fillColor: [255, 247, 237],
+        fillColor: [255, 247, 237], // Light orange
       },
       styles: {
         fontSize: 8,
@@ -527,6 +582,7 @@ export default function Payments() {
       },
     })
     
+    // Footer
     const pageCount = doc.getNumberOfPages()
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i)
@@ -569,6 +625,9 @@ export default function Payments() {
           <button
             onClick={() => {
               setEditingPayment(null)
+              // Reset form with default values (today's date and current month)
+              const today = new Date().toISOString().split('T')[0]
+              const currentMonth = new Date().toISOString().slice(0, 7)
               resetForm()
               setShowModal(true)
             }}
@@ -731,6 +790,7 @@ export default function Payments() {
       {showModal && (
         <div className="fixed inset-0 bg-white bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] overflow-hidden flex flex-col animate-slide-up">
+            {/* Header */}
             <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-8 py-6 text-white">
               <div className="flex items-center justify-between">
                 <div>
@@ -752,13 +812,15 @@ export default function Payments() {
               </div>
             </div>
 
+            {/* Form Content */}
             <div className="flex-1 overflow-y-auto p-8">
               <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Manual Entry Toggle for Day Pass and Meeting Room */}
                 <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-6 border-2 border-purple-200 mb-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-lg font-semibold text-gray-900 mb-2">Quick Manual Entry</h4>
-                      <p className="text-sm text-gray-600">For Day Pass, Meeting Room, or Virtual Office payments</p>
+                      <h4 className="text-lg font-semibold text-gray-900 mb-2">Day Pass / Meeting Room Entry</h4>
+                      <p className="text-sm text-gray-600">Enable manual entry for Day Pass and Meeting Room payments</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
@@ -770,6 +832,9 @@ export default function Payments() {
                             is_manual_entry: e.target.checked,
                             assignment_id: e.target.checked ? '' : formData.assignment_id,
                             manual_space_type: e.target.checked ? formData.manual_space_type : '',
+                            manual_customer_name: e.target.checked ? formData.manual_customer_name : '',
+                            manual_space_name: e.target.checked ? formData.manual_space_name : '',
+                            manual_daily_rate: e.target.checked ? formData.manual_daily_rate : '',
                           })
                         }}
                         className="sr-only peer"
@@ -779,155 +844,112 @@ export default function Payments() {
                   </div>
                 </div>
 
+                {/* Manual Entry Form for Day Pass and Meeting Room */}
                 {formData.is_manual_entry && (
-                  <div className="space-y-6 animate-fade-in">
-                    {/* Manual Entry Form */}
-                    <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-6 border-2 border-purple-200">
-                      <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                        <span className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">1</span>
-                        Payment Details
-                      </h4>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-gray-700">
-                              Space Type <span className="text-red-500">*</span>
-                            </label>
-                            <select
-                              required
-                              value={formData.manual_space_type}
-                              onChange={(e) => {
-                                const spaceType = e.target.value as 'Day Pass' | 'Meeting Room' | 'Virtual Office' | ''
-                                setFormData({
-                                  ...formData,
-                                  manual_space_type: spaceType,
-                                })
-                              }}
-                              className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900 font-medium"
-                            >
-                              <option value="">Select Type</option>
-                              <option value="Day Pass">Day Pass</option>
-                              <option value="Meeting Room">Meeting Room</option>
-                              <option value="Virtual Office">Virtual Office</option>
-                            </select>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-gray-700">
-                              Amount <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              required
-                              value={formData.amount}
-                              onChange={(e) => handleAmountChange(e.target.value)}
-                              placeholder="0.00"
-                              className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900 placeholder:text-gray-400 font-medium"
-                            />
-                          </div>
-                        </div>
-
-                        {/* GST Option */}
-                        <div className="p-4 bg-white rounded-lg border-2 border-purple-200">
-                          <div className="flex items-center">
-                            <input
-                              type="checkbox"
-                              id="manual_includes_gst"
-                              checked={formData.includes_gst}
-                              onChange={(e) => handleGSTChange(e.target.checked, formData.amount)}
-                              className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
-                            />
-                            <label
-                              htmlFor="manual_includes_gst"
-                              className="ml-3 text-sm font-semibold text-gray-700 cursor-pointer"
-                            >
-                              Include GST (18% additional)
-                            </label>
-                          </div>
-                          {formData.includes_gst && (
-                            <div className="mt-3 pt-3 border-t border-purple-200">
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm font-semibold text-gray-700">Base Amount:</span>
-                                <span className="text-base font-bold text-gray-900">
-                                  {formatCurrency(parseFloat(formData.amount) || 0)}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between mt-2">
-                                <span className="text-sm font-semibold text-gray-700">GST (18%):</span>
-                                <span className="text-base font-bold text-purple-700">
-                                  {formatCurrency(parseFloat(formData.gst_amount) || 0)}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-purple-300">
-                                <span className="text-lg font-bold text-gray-900">Total Amount:</span>
-                                <span className="text-xl font-bold text-purple-800">
-                                  {formatCurrency(
-                                    (parseFloat(formData.amount) || 0) + (parseFloat(formData.gst_amount) || 0)
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                  <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-6 border-2 border-purple-200 mb-6 animate-fade-in">
+                    <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                      <span className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">1</span>
+                      Manual Entry Details
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-semibold text-gray-700">
+                          Space Type <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          required
+                          value={formData.manual_space_type}
+                          onChange={(e) => {
+                            const spaceType = e.target.value as 'Day Pass' | 'Meeting Room' | ''
+                            setFormData({
+                              ...formData,
+                              manual_space_type: spaceType,
+                            })
+                          }}
+                          className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900 font-medium"
+                        >
+                          <option value="">Select Type</option>
+                          <option value="Day Pass">Day Pass</option>
+                          <option value="Meeting Room">Meeting Room</option>
+                        </select>
                       </div>
-                    </div>
-
-                    {/* Date & Destination for Manual Entry */}
-                    <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-6 border-2 border-purple-200">
-                      <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                        <span className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
-                        Date & Destination
-                      </h4>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-gray-700">
-                              Payment Date <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="date"
-                              required
-                              value={formData.payment_date || new Date().toISOString().split('T')[0]}
-                              onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
-                              className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-gray-700">
-                              Payment For Month <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="month"
-                              required
-                              value={formData.payment_for_month || new Date().toISOString().slice(0, 7)}
-                              onChange={(e) => setFormData({ ...formData, payment_for_month: e.target.value })}
-                              className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900"
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="block text-sm font-semibold text-gray-700">
-                            Payment Destination <span className="text-red-500">*</span>
+                      <div className="space-y-2">
+                        <label className="block text-sm font-semibold text-gray-700">
+                          Amount <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={formData.amount}
+                          onChange={(e) => handleAmountChange(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900 placeholder:text-gray-400 font-medium"
+                        />
+                      </div>
+                      <div className="col-span-1 md:col-span-2 p-4 bg-white rounded-lg border-2 border-purple-200">
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            id="manual_includes_gst"
+                            checked={formData.includes_gst}
+                            onChange={(e) => handleGSTChange(e.target.checked, formData.amount)}
+                            className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                          />
+                          <label htmlFor="manual_includes_gst" className="ml-3 text-sm font-semibold text-gray-700 cursor-pointer">
+                            Include GST (18% additional)
                           </label>
-                          <select
-                            required
-                            value={formData.destination || ''}
-                            onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-                            className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900 font-medium"
-                          >
-                            <option value="">Select Payment Destination</option>
-                            {destinationOptions.map((option) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
                         </div>
+                        {formData.includes_gst && (
+                          <div className="mt-3 pt-3 border-t border-purple-200">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold text-gray-700">Base Amount:</span>
+                              <span className="text-base font-bold text-gray-900">{formatCurrency(parseFloat(formData.amount) || 0)}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-sm font-semibold text-gray-700">GST (18%):</span>
+                              <span className="text-base font-bold text-purple-700">{formatCurrency(parseFloat(formData.gst_amount) || 0)}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-purple-300">
+                              <span className="text-lg font-bold text-gray-900">Total Amount:</span>
+                              <span className="text-xl font-bold text-purple-800">{formatCurrency((parseFloat(formData.amount) || 0) + (parseFloat(formData.gst_amount) || 0))}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <label className="block text-sm font-semibold text-gray-700">Payment For Date(s)</label>
+                        <input
+                          type="text"
+                          value={formData.rent_for_dates}
+                          onChange={(e) => setFormData({ ...formData, rent_for_dates: e.target.value })}
+                          placeholder="e.g., 2025-01-15 or 2025-01-15, 2025-01-16"
+                          className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white hover:border-purple-400 text-gray-900 placeholder:text-gray-400 font-medium"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="block text-sm font-semibold text-gray-700">
+                          Payment Destination <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          required
+                          value={formData.destination || ''}
+                          onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
+                          className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white hover:border-purple-400 text-gray-900 font-medium"
+                        >
+                          <option value="">Select Payment Destination</option>
+                          {destinationOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>
                 )}
 
+                {/* Assignment Selection Section - Only show if not manual entry */}
                 {!formData.is_manual_entry && (
                   <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                     <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
@@ -961,48 +983,120 @@ export default function Payments() {
                               )
                             })}
                         </select>
-                        {selectedAssignment && selectedSpace && selectedCustomer && (
-                          <div className="mt-2 p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border-2 border-green-200 animate-fade-in">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-xs text-gray-500 mb-1 font-medium">Customer</p>
-                                <p className="text-base font-bold text-green-900">
-                                  {selectedCustomer.first_name && selectedCustomer.last_name
-                                    ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}`
-                                    : selectedCustomer.name || '-'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-500 mb-1 font-medium">Allocated Space</p>
-                                <p className="text-base font-bold text-green-900">
-                                  {selectedSpace.name} ({selectedSpace.type})
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-500 mb-1 font-medium">Monthly Price</p>
-                                <p className="text-base font-bold text-green-900">
-                                  {formatCurrency(selectedAssignment.monthly_price || selectedSpace.price_per_day)}
-                                </p>
-                              </div>
-                              {(selectedAssignment as any).payment_destination && (
-                                <div>
-                                  <p className="text-xs text-gray-500 mb-1 font-medium">Payment Destination</p>
-                                  <p className="text-base font-bold text-green-900">
-                                    {(selectedAssignment as any).payment_destination}
-                                  </p>
-                                </div>
-                              )}
+                      {selectedAssignment && selectedSpace && selectedCustomer && (
+                        <div className="mt-2 p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border-2 border-green-200 animate-fade-in">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1 font-medium">Customer</p>
+                              <p className="text-base font-bold text-green-900">
+                                {selectedCustomer.first_name && selectedCustomer.last_name
+                                  ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}`
+                                  : selectedCustomer.name || '-'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1 font-medium">Allocated Space</p>
+                              <p className="text-base font-bold text-green-900">
+                                {selectedSpace.name} ({selectedSpace.type})
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1 font-medium">Monthly Price</p>
+                              <p className="text-base font-bold text-green-900">
+                                {formatCurrency(selectedAssignment.monthly_price || selectedSpace.price_per_day)}
+                              </p>
+                            </div>
+                          />
+                          <p className="text-xs text-purple-600 mt-1 font-medium">
+                            Daily rate: {formatCurrency(formData.is_manual_entry ? parseFloat(formData.manual_daily_rate) || 0 : (selectedSpace?.price_per_day || 0))} × {formData.number_of_days} days = {formatCurrency(parseFloat(formData.amount) || 0)}
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-sm font-semibold text-gray-700">
+                            Rent For Date(s) <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.rent_for_dates}
+                            onChange={(e) => setFormData({ ...formData, rent_for_dates: e.target.value })}
+                            placeholder="e.g., 2024-01-15 or 2024-01-15, 2024-01-16"
+                            className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white hover:border-purple-400 text-gray-900 placeholder:text-gray-400 font-medium"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Enter date(s) in YYYY-MM-DD format. Use comma for multiple dates.
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {/* GST Option for Daily Billing */}
+                      <div className="p-4 bg-white rounded-lg border-2 border-purple-200">
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            id="daily_includes_gst"
+                            checked={formData.includes_gst}
+                            onChange={(e) => handleGSTChange(e.target.checked, formData.amount)}
+                            className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                          />
+                          <label
+                            htmlFor="daily_includes_gst"
+                            className="ml-3 text-sm font-semibold text-gray-700 cursor-pointer"
+                          >
+                            Include GST (18% additional)
+                          </label>
+                        </div>
+                        {formData.includes_gst && (
+                          <div className="mt-3 pt-3 border-t border-purple-200">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold text-gray-700">Base Amount:</span>
+                              <span className="text-base font-bold text-gray-900">
+                                {formatCurrency(parseFloat(formData.amount) || 0)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-sm font-semibold text-gray-700">GST (18%):</span>
+                              <span className="text-base font-bold text-purple-700">
+                                {formatCurrency(parseFloat(formData.gst_amount) || 0)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-purple-300">
+                              <span className="text-lg font-bold text-gray-900">Total Amount:</span>
+                              <span className="text-xl font-bold text-purple-800">
+                                {formatCurrency(
+                                  (parseFloat(formData.amount) || 0) + (parseFloat(formData.gst_amount) || 0)
+                                )}
+                              </span>
                             </div>
                           </div>
                         )}
+                      </div>
+
+                      {/* Payment Destination for Daily Billing */}
+                      <div className="space-y-2">
+                        <label className="block text-sm font-semibold text-gray-700">
+                          Payment Destination <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          required
+                          value={formData.destination || ''}
+                          onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
+                          className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white hover:border-purple-400 text-gray-900 font-medium"
+                        >
+                          <option value="">Select Payment Destination</option>
+                          {destinationOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>
                 )}
 
-               
-
-                {!formData.is_manual_entry && selectedSpace && getBillingCycle(selectedSpace.type) !== 'daily' && (
+                {/* Payment Amount Section - Only for Monthly/Yearly Billing */}
+                {(!selectedSpace || getBillingCycle(selectedSpace.type) !== 'daily') && (
                   <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                     <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                       <span className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
@@ -1025,6 +1119,11 @@ export default function Payments() {
                         {selectedAssignment && selectedSpace && (
                           <p className="text-xs text-blue-600 mt-1 font-medium">
                             ✓ Auto-filled from assignment ({formatCurrency(selectedAssignment.monthly_price || selectedSpace.price_per_day || 0)}). You can modify if needed.
+                          </p>
+                        )}
+                        {!selectedAssignment && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Select an assignment to auto-fill the amount
                           </p>
                         )}
                       </div>
@@ -1060,6 +1159,9 @@ export default function Payments() {
                               readOnly
                               className="w-full px-4 py-3 border-2 border-green-300 rounded-lg bg-white text-gray-900 font-semibold text-green-700 text-lg"
                             />
+                            {selectedAssignment && (
+                              <p className="text-xs text-gray-500 mt-1">Auto-calculated as 18% of base amount</p>
+                            )}
                           </div>
                           <div className="pt-3 border-t-2 border-green-200">
                             <div className="flex items-center justify-between">
@@ -1100,7 +1202,8 @@ export default function Payments() {
                   </div>
                 )}
 
-                {!formData.is_manual_entry && selectedSpace && getBillingCycle(selectedSpace.type) !== 'daily' && (
+                {/* Date & Destination Section - Only for Monthly/Yearly Billing */}
+                {(!selectedSpace || getBillingCycle(selectedSpace.type) !== 'daily') && (
                   <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                     <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                       <span className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>
@@ -1164,14 +1267,20 @@ export default function Payments() {
                             : `Default from assignment: ${(selectedAssignment as any).payment_destination} (currently: ${formData.destination || 'Not selected'})`}
                         </p>
                       )}
+                      {!selectedAssignment && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Select an assignment to see the default destination
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
 
+                {/* Additional Information Section */}
                 <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                   <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                     <span className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
-                      {(formData.is_manual_entry || (selectedSpace && getBillingCycle(selectedSpace.type) === 'daily')) ? '3' : '4'}
+                      {selectedSpace && getBillingCycle(selectedSpace.type) === 'daily' ? '5' : '4'}
                     </span>
                     Additional Information
                   </h4>
@@ -1199,6 +1308,7 @@ export default function Payments() {
                   </div>
                 </div>
 
+                {/* Form Actions */}
                 <div className="flex justify-end space-x-4 pt-6 border-t-2 border-gray-200">
                   <button
                     type="button"

@@ -14,6 +14,7 @@ export default function Navigation() {
     { href: '/customers', label: 'Customers' },
     { href: '/assignments', label: 'Assignments' },
     { href: '/payments', label: 'Payments' },
+    { href: '/leads', label: 'Leads' },
   ]
 
   return (
