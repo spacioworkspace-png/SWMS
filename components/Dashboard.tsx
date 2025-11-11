@@ -378,7 +378,7 @@ export default function Dashboard() {
         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
         <button
           onClick={generateMonthlyReport}
-          className="bg-gradient-to-r from-green-500 to-green-600 text-white px-5 py-2 rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md font-semibold flex items-center"
+          className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-5 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 shadow-md font-semibold flex items-center"
         >
           <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
           Generate Monthly Report
@@ -386,25 +386,25 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
           <h3 className="text-sm font-medium mb-2 opacity-90">Total Spaces</h3>
           <p className="text-3xl font-bold">{stats.totalSpaces}</p>
           <p className="text-sm mt-2 opacity-75">{stats.availableSpaces} available, {stats.occupiedSpaces} occupied</p>
         </div>
 
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
           <h3 className="text-sm font-medium mb-2 opacity-90">Available Spaces</h3>
           <p className="text-3xl font-bold">{stats.availableSpaces}</p>
           <p className="text-sm mt-2 opacity-75">Vacant spaces</p>
         </div>
 
-        <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
           <h3 className="text-sm font-medium mb-2 opacity-90">Vacant Value</h3>
           <p className="text-3xl font-bold">{formatCurrency(stats.vacantValue)}</p>
           <p className="text-sm mt-2 opacity-75">Monthly rent potential</p>
         </div>
 
-        <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
           <h3 className="text-sm font-medium mb-2 opacity-90">Total Customers</h3>
           <p className="text-3xl font-bold">{stats.totalCustomers}</p>
           <Link href="/customers" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
@@ -412,7 +412,7 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
           <h3 className="text-sm font-medium mb-2 opacity-90">Active Assignments</h3>
           <p className="text-3xl font-bold">{stats.activeAssignments}</p>
           <Link href="/assignments" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
@@ -428,7 +428,7 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
           <h3 className="text-sm font-medium mb-2 opacity-90">Leads (This Month)</h3>
           <p className="text-3xl font-bold">{stats.monthlyLeadsCount}</p>
           <Link href="/leads" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
@@ -436,19 +436,19 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
           <h3 className="text-sm font-medium mb-2 opacity-90">Monthly Revenue (Total)</h3>
           <p className="text-3xl font-bold">{formatCurrency(stats.monthlyRevenue)}</p>
           <p className="text-sm mt-2 opacity-75">This month</p>
         </div>
 
-        <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
           <h3 className="text-sm font-medium mb-2 opacity-90">Base Revenue (No GST)</h3>
           <p className="text-3xl font-bold">{formatCurrency(stats.monthlyBaseRevenue)}</p>
           <p className="text-sm mt-2 opacity-75">Without GST</p>
         </div>
 
-        <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
           <h3 className="text-sm font-medium mb-2 opacity-90">Revenue with GST</h3>
           <p className="text-3xl font-bold">{formatCurrency(stats.monthlyRevenueWithGST)}</p>
           <p className="text-sm mt-2 opacity-75">Base + GST</p>

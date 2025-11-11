@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useAuth } from './AuthProvider'
 import { useRouter } from 'next/navigation'
 
@@ -87,9 +88,19 @@ export default function Login() {
           </button>
         </form>
 
+        <div className="mt-4">
+          <Link
+            href="/quick-add"
+            className="w-full inline-flex items-center justify-center px-6 py-3 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-200 font-semibold text-gray-700"
+          >
+            Continue as APPA (Quick Add)
+          </Link>
+          <p className="mt-2 text-xs text-gray-500 text-center">Access to add Payments and Leads only</p>
+        </div>
+
         <div className="mt-6 text-center">
           <p className="text-xs text-gray-500">
-            Authorized users only: SHAN or APPA
+            Authorized user only: SHAN
           </p>
         </div>
       </div>

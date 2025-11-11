@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Payment, Customer, Assignment, Space } from '@/types'
 import { formatCurrency, formatDate, getBillingCycle } from '@/lib/utils'
@@ -9,15 +9,22 @@ import { canEdit, canDelete } from '@/lib/auth'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
-export default function PaymentsNew() {
+export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
   const { user } = useAuth()
   const [payments, setPayments] = useState<Payment[]>([])
+  const [filteredPayments, setFilteredPayments] = useState<Payment[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [spaces, setSpaces] = useState<Space[]>([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
+  const [showModal, setShowModal] = useState(mode === 'formOnly')
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [destinationFilter, setDestinationFilter] = useState<string>('all')
+  const [gstFilter, setGstFilter] = useState<'all' | 'yes' | 'no'>('all')
+  const [sortBy, setSortBy] = useState('date_desc')
   const [dashboardStats, setDashboardStats] = useState({
     monthlyRevenue: 0,
     monthlyPayments: 0,
@@ -26,6 +33,12 @@ export default function PaymentsNew() {
     todayRevenue: 0,
     thisWeekRevenue: 0,
   })
+  const [monthlyBreakdown, setMonthlyBreakdown] = useState<Record<string, { count: number; base: number; gst: number; total: number }>>({})
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'list' | 'pending' | 'reports'>('dashboard')
+  const [reportsSort, setReportsSort] = useState<'desc' | 'asc'>('desc')
+  const [reportsRowSort, setReportsRowSort] = useState<'space_asc' | 'space_desc' | 'date_asc' | 'date_desc'>('date_asc')
+  const [isLateMonth, setIsLateMonth] = useState<boolean>(false)
+  const [groupPendingByMonth, setGroupPendingByMonth] = useState<boolean>(false)
   const [formData, setFormData] = useState({
     assignment_id: '',
     amount: '',
@@ -53,6 +66,89 @@ export default function PaymentsNew() {
   useEffect(() => {
     fetchData()
   }, [])
+
+  // Compute filtered/sorted payments
+  useEffect(() => {
+    let list = [...payments]
+
+    // Date range filter
+    if (dateFrom) list = list.filter((p) => p.payment_date >= dateFrom)
+    if (dateTo) list = list.filter((p) => p.payment_date <= dateTo)
+
+    // Destination filter
+    if (destinationFilter !== 'all') {
+      list = list.filter((p) => (p.destination || '') === destinationFilter)
+    }
+
+    // GST filter
+    if (gstFilter !== 'all') {
+      const flag = gstFilter === 'yes'
+      list = list.filter((p) => !!p.includes_gst === flag)
+    }
+
+    // Search filter across customer name, space name, destination, reference, notes
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase()
+      list = list.filter((p) => {
+        const customer = p.customer as Customer | undefined
+        const assignment = p.assignment as Assignment | undefined
+        const space = assignment?.space as Space | undefined
+        const customerName = customer?.first_name && customer?.last_name
+          ? `${customer.first_name} ${customer.last_name}`
+          : customer?.name || ''
+        return (
+          customerName.toLowerCase().includes(q) ||
+          (space?.name || '').toLowerCase().includes(q) ||
+          (space?.type || '').toLowerCase().includes(q) ||
+          (p.destination || '').toLowerCase().includes(q) ||
+          (p.reference_number || '').toLowerCase().includes(q) ||
+          (p.notes || '').toLowerCase().includes(q)
+        )
+      })
+    }
+
+    // Sort
+    list.sort((a, b) => {
+      switch (sortBy) {
+        case 'date_desc':
+          return new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
+        case 'date_asc':
+          return new Date(a.payment_date).getTime() - new Date(b.payment_date).getTime()
+        case 'amount_desc':
+          return b.amount - a.amount
+        case 'amount_asc':
+          return a.amount - b.amount
+        case 'customer_asc': {
+          const getName = (p: Payment) => {
+            const c = p.customer as Customer | undefined
+            const name = c?.first_name && c?.last_name ? `${c.first_name} ${c.last_name}` : c?.name || ''
+            return name
+          }
+          return getName(a).localeCompare(getName(b))
+        }
+        case 'space_asc': {
+          const getSpace = (p: Payment) => {
+            const asg = p.assignment as Assignment | undefined
+            const sp = asg?.space as Space | undefined
+            return (sp?.name || '').toLowerCase()
+          }
+          return getSpace(a).localeCompare(getSpace(b))
+        }
+        case 'space_desc': {
+          const getSpace = (p: Payment) => {
+            const asg = p.assignment as Assignment | undefined
+            const sp = asg?.space as Space | undefined
+            return (sp?.name || '').toLowerCase()
+          }
+          return getSpace(b).localeCompare(getSpace(a))
+        }
+        default:
+          return 0
+      }
+    })
+
+    setFilteredPayments(list)
+  }, [payments, searchTerm, dateFrom, dateTo, destinationFilter, gstFilter, sortBy])
 
   const fetchData = async () => {
     try {
@@ -90,6 +186,7 @@ export default function PaymentsNew() {
       setCustomers(customersResult.data || [])
       setAssignments(assignmentsResult.data || [])
       setSpaces(spacesResult.data || [])
+      setFilteredPayments(paymentsData || [])
 
       const monthlyPayments = paymentsData?.filter((p) => p.payment_date >= startOfMonth) || []
       const weeklyPayments = paymentsData?.filter((p) => p.payment_date >= startOfWeek) || []
@@ -109,6 +206,21 @@ export default function PaymentsNew() {
         todayRevenue,
         thisWeekRevenue,
       })
+
+      const breakdown: Record<string, { count: number; base: number; gst: number; total: number }> = {}
+      for (const p of monthlyPayments) {
+        const asg = p.assignment as Assignment | undefined
+        const sp = asg?.space as Space | undefined
+        const type = sp?.type || 'Unknown'
+        const base = p.amount - (p.gst_amount || 0)
+        const gst = p.includes_gst ? (p.gst_amount || 0) : 0
+        if (!breakdown[type]) breakdown[type] = { count: 0, base: 0, gst: 0, total: 0 }
+        breakdown[type].count += 1
+        breakdown[type].base += base
+        breakdown[type].gst += gst
+        breakdown[type].total += p.amount
+      }
+      setMonthlyBreakdown(breakdown)
     } catch (error: any) {
       alert('Error fetching data: ' + error.message)
     } finally {
@@ -200,6 +312,196 @@ export default function PaymentsNew() {
   const selectedAssignment = assignments.find((a) => a.id === formData.assignment_id)
   const selectedCustomer = selectedAssignment ? (customers.find((c) => c.id === selectedAssignment.customer_id) as Customer) : null
   const selectedSpace = selectedAssignment ? (selectedAssignment.space as Space) || spaces.find((s) => s.id === selectedAssignment.space_id) : null
+
+  // Current month key e.g. '2025-11'
+  const currentMonthKey = new Date().toISOString().slice(0, 7)
+  const [pendingMonth, setPendingMonth] = useState<string>(currentMonthKey)
+  
+  // Dashboard computations: this-month only metrics and last-month comparison
+  const lastMonthKey = (() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 1)
+    return d.toISOString().slice(0, 7)
+  })()
+
+  const monthKeyOf = (p: Payment) => ((p.payment_for_date && p.payment_for_date.slice(0,7)) || (p.payment_date || '').slice(0,7))
+
+  const metrics = useMemo(() => {
+    const thisMonthPayments = payments.filter((p) => monthKeyOf(p) === currentMonthKey)
+    const lastMonthPayments = payments.filter((p) => monthKeyOf(p) === lastMonthKey)
+    const sum = (list: Payment[]) => {
+      let baseGST = 0, baseNonGST = 0, gst = 0, total = 0
+      for (const p of list) {
+        const b = (p.amount - (p.gst_amount || 0))
+        if (p.includes_gst) baseGST += b
+        else baseNonGST += p.amount
+        gst += (p.gst_amount || 0)
+        total += p.amount
+      }
+      const base = baseGST + baseNonGST
+      return { baseGST, baseNonGST, base, gst, total, count: list.length }
+    }
+    return { thisM: sum(thisMonthPayments), lastM: sum(lastMonthPayments) }
+  }, [payments, currentMonthKey, lastMonthKey])
+  const [rowCollectMonth, setRowCollectMonth] = useState<Record<string, string>>({})
+
+  // Utility: month iteration between two YYYY-MM inclusive
+  const monthRange = (fromKey: string, toKey: string) => {
+    const res: string[] = []
+    const [yf, mf] = fromKey.split('-').map(Number)
+    const [yt, mt] = toKey.split('-').map(Number)
+    let y = yf, m = mf
+    while (y < yt || (y === yt && m <= mt)) {
+      res.push(`${y.toString().padStart(4,'0')}-${m.toString().padStart(2,'0')}`)
+      m++
+      if (m > 12) { m = 1; y++ }
+    }
+    return res
+  }
+
+  // Map of assignmentId -> pending month keys (from start_date up to current month, excluding months with a payment)
+  const pendingMonthsByAssignment: Record<string, string[]> = (() => {
+    const map: Record<string, string[]> = {}
+    for (const a of assignments) {
+      if (a.status !== 'active') continue
+      const sp = (a.space as Space) || spaces.find((s) => s.id === a.space_id)
+      if (sp?.type === 'Virtual Office') continue
+      const startKey = (a.start_date || '').slice(0,7) || currentMonthKey
+      const months = monthRange(startKey, currentMonthKey)
+      const pend = months.filter((mk) => {
+        const hasPayment = payments.some((p) => p.assignment_id === a.id && (((p.payment_for_date || '').slice(0,7) === mk) || ((p.payment_date || '').slice(0,7) === mk)))
+        return !hasPayment
+      })
+      map[a.id] = pend
+    }
+    return map
+  })()
+
+  // Flatten pending months into rows for display
+  const pendingRows: Array<{ a: Assignment; monthKey: string }> = (() => {
+    const rows: Array<{ a: Assignment; monthKey: string }> = []
+    for (const a of assignments) {
+      if (a.status !== 'active') continue
+      const sp = (a.space as Space) || spaces.find((s) => s.id === a.space_id)
+      if (sp?.type === 'Virtual Office') continue
+      const months = pendingMonthsByAssignment[a.id] || []
+      for (const mk of months) rows.push({ a, monthKey: mk })
+    }
+    // Sort by space name then month
+    rows.sort((r1, r2) => {
+      const s1 = ((r1.a.space as Space) || spaces.find((s) => s.id === r1.a.space_id))
+      const s2 = ((r2.a.space as Space) || spaces.find((s) => s.id === r2.a.space_id))
+      const n1 = (s1?.name || '').toLowerCase()
+      const n2 = (s2?.name || '').toLowerCase()
+      const byName = n1.localeCompare(n2)
+      if (byName !== 0) return byName
+      return r1.monthKey.localeCompare(r2.monthKey)
+    })
+    return rows
+  })()
+
+  // Group pending rows by month with estimated totals (base/gst/total)
+  const pendingGroups: Record<string, { rows: Array<{ a: Assignment; monthKey: string }>; totals: { base: number; gst: number; total: number } }> = (() => {
+    const map: Record<string, { rows: Array<{ a: Assignment; monthKey: string }>; totals: { base: number; gst: number; total: number } }> = {}
+    for (const pr of pendingRows) {
+      const key = pr.monthKey
+      if (!map[key]) map[key] = { rows: [], totals: { base: 0, gst: 0, total: 0 } }
+      map[key].rows.push(pr)
+      const a = pr.a
+      const sp = (a.space as Space) || spaces.find((s) => s.id === a.space_id)
+      const c = customers.find((cc) => cc.id === a.customer_id)
+      const base = (a.monthly_price || sp?.price_per_day || 0)
+      const gst = c?.pays_gst ? base * 0.18 : 0
+      map[key].totals.base += base
+      map[key].totals.gst += gst
+      map[key].totals.total += base + gst
+    }
+    return map
+  })()
+
+  // Assignments that have NOT made a payment in selected pendingMonth (match by payment_for_date OR payment_date month)
+  const pendingAssignments = assignments
+    .filter((a) => a.status === 'active')
+    .filter((a) => {
+      const sp = (a.space as Space) || spaces.find((s) => s.id === a.space_id)
+      if (sp?.type === 'Virtual Office') return false
+      const hasPaymentThisMonth = payments.some((p) => {
+        if (p.assignment_id !== a.id) return false
+        const forMonth = (p.payment_for_date || '').slice(0, 7)
+        const paidMonth = (p.payment_date || '').slice(0, 7)
+        return forMonth === pendingMonth || paidMonth === pendingMonth
+      })
+      return !hasPaymentThisMonth
+    })
+    .sort((a, b) => {
+      const sa = ((a.space as Space) || spaces.find((s) => s.id === a.space_id))
+      const sb = ((b.space as Space) || spaces.find((s) => s.id === b.space_id))
+      const an = (sa?.name || '').toLowerCase()
+      const bn = (sb?.name || '').toLowerCase()
+      return an.localeCompare(bn)
+    })
+
+  // Start a collection flow for a given assignment
+  const startCollect = (assignment: Assignment, monthKey?: string) => {
+    setEditingPayment(null)
+    resetForm()
+    handleAssignmentChange(assignment.id)
+    setFormData((prev) => ({ ...prev, payment_for_month: (monthKey || pendingMonth) }))
+    setShowModal(true)
+  }
+
+  // Row comparator for Reports tab tables
+  const compareReportRows = (a: Payment, b: Payment) => {
+    const getSpaceName = (p: Payment) => {
+      const asg = p.assignment as Assignment | undefined
+      const sp = asg?.space as Space | undefined
+      return (sp?.name || '').toLowerCase()
+    }
+    switch (reportsRowSort) {
+      case 'space_asc':
+        return getSpaceName(a).localeCompare(getSpaceName(b))
+      case 'space_desc':
+        return getSpaceName(b).localeCompare(getSpaceName(a))
+      case 'date_desc':
+        return b.payment_date.localeCompare(a.payment_date)
+      case 'date_asc':
+      default:
+        return a.payment_date.localeCompare(b.payment_date)
+    }
+  }
+
+  // Only show assignments that already have a payment recorded for the selected month, ordered by space name
+  const monthKey = (formData.payment_for_month || new Date().toISOString().slice(0, 7))
+  const filteredAssignmentsByMonth = assignments
+    .filter((a) => a.status === 'active')
+    .filter((a) => !payments.some((p) => p.assignment_id === a.id && (p.payment_for_date || '').startsWith(monthKey)))
+    .sort((a, b) => {
+      const sa = ((a.space as Space) || spaces.find((s) => s.id === a.space_id))
+      const sb = ((b.space as Space) || spaces.find((s) => s.id === b.space_id))
+      const an = (sa?.name || '').toLowerCase()
+      const bn = (sb?.name || '').toLowerCase()
+      return an.localeCompare(bn)
+    })
+
+  // If selected assignment is not in the filtered list for the chosen month, clear it
+  useEffect(() => {
+    if (formData.assignment_id && !filteredAssignmentsByMonth.find((a) => a.id === formData.assignment_id)) {
+      setFormData((prev) => ({ ...prev, assignment_id: '' }))
+    }
+  }, [monthKey, assignments, payments])
+
+  // Late month toggle: when enabled, set Payment For Month to previous month; when disabled, default to current if empty
+  useEffect(() => {
+    const now = new Date()
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const currentKey = currentMonth.toISOString().slice(0, 7)
+    const prevKey = prevMonth.toISOString().slice(0, 7)
+    setFormData((prev) => ({
+      ...prev,
+      payment_for_month: isLateMonth ? prevKey : (prev.payment_for_month || currentKey),
+    }))
+  }, [isLateMonth])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -442,7 +744,7 @@ export default function PaymentsNew() {
           <p className="text-sm text-gray-500 mt-1">Manage and track all payments</p>
         </div>
         <div className="flex space-x-3">
-          <button onClick={generateMonthlyPDF} className="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-2 rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center">
+          <button onClick={generateMonthlyPDF} className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center">
             <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             Generate Monthly PDF
           </button>
@@ -456,19 +758,270 @@ export default function PaymentsNew() {
         </div>
       </div>
 
-      <div className="mb-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">Sales Dashboard - This Month</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Monthly Revenue</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.monthlyRevenue)}</p><p className="text-sm mt-2 opacity-75">{dashboardStats.monthlyPayments} payments</p></div>
-          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Net Revenue (Base)</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.netRevenue)}</p><p className="text-sm mt-2 opacity-75">After GST deduction</p></div>
-          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Total GST Collected</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.totalGST)}</p><p className="text-sm mt-2 opacity-75">From {dashboardStats.monthlyPayments} payments</p></div>
+      <div className="mb-4 sticky top-0 z-30 bg-white border-b border-gray-200 py-2">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+          <button type="button" onClick={() => setActiveTab('dashboard')} className={`flex-1 min-w-[140px] px-4 py-3 rounded-lg border text-sm font-semibold ${activeTab === 'dashboard' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>Dashboard</button>
+          <button type="button" onClick={() => setActiveTab('list')} className={`flex-1 min-w-[140px] px-4 py-3 rounded-lg border text-sm font-semibold ${activeTab === 'list' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>All Payments</button>
+          <button type="button" onClick={() => setActiveTab('pending')} className={`flex-1 min-w-[140px] px-4 py-3 rounded-lg border text-sm font-semibold ${activeTab === 'pending' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>Pending</button>
+          <button type="button" onClick={() => setActiveTab('reports')} className={`flex-1 min-w-[140px] px-4 py-3 rounded-lg border text-sm font-semibold ${activeTab === 'reports' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>Reports</button>
         </div>
       </div>
 
+      {activeTab === 'dashboard' ? (
+        <div className="mb-8">
+          <h3 className="text-xl font-bold text-gray-900 mb-4">Sales Dashboard - This Month</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Monthly Revenue</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.monthlyRevenue)}</p><p className="text-sm mt-2 opacity-75">{dashboardStats.monthlyPayments} payments</p></div>
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Net Revenue (Base)</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.netRevenue)}</p><p className="text-sm mt-2 opacity-75">After GST deduction</p></div>
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Total GST Collected</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.totalGST)}</p><p className="text-sm mt-2 opacity-75">From {dashboardStats.monthlyPayments} payments</p></div>
+          </div>
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-white rounded-xl border border-orange-100 p-4">
+              <div className="text-xs font-semibold text-gray-500">GST Base</div>
+              <div className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(metrics.thisM.baseGST)}</div>
+              <div className="text-xs text-gray-500 mt-1">From GST-included payments</div>
+            </div>
+            <div className="bg-white rounded-xl border border-orange-100 p-4">
+              <div className="text-xs font-semibold text-gray-500">Non-GST Base</div>
+              <div className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(metrics.thisM.baseNonGST)}</div>
+              <div className="text-xs text-gray-500 mt-1">From non-GST payments</div>
+            </div>
+            <div className="bg-white rounded-xl border border-orange-100 p-4">
+              <div className="text-xs font-semibold text-gray-500">Total Base</div>
+              <div className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(metrics.thisM.base)}</div>
+              <div className="text-xs text-gray-500 mt-1">GST Base + Non-GST Base</div>
+            </div>
+            <div className="bg-white rounded-xl border border-orange-100 p-4">
+              <div className="text-xs font-semibold text-gray-500">GST</div>
+              <div className="text-2xl font-bold text-green-700 mt-1">{formatCurrency(metrics.thisM.gst)}</div>
+              <div className="text-xs text-gray-500 mt-1">Collected GST</div>
+            </div>
+            <div className="bg-white rounded-xl border border-orange-100 p-4">
+              <div className="text-xs font-semibold text-gray-500">Total</div>
+              <div className="text-2xl font-bold text-orange-700 mt-1">{formatCurrency(metrics.thisM.total)}</div>
+              <div className="text-xs text-gray-500 mt-1">Base + GST</div>
+            </div>
+          </div>
+
+          <div className="mt-6 bg-white rounded-xl border border-orange-100 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-md font-bold text-gray-900">Sales Comparison</h4>
+                <p className="text-sm text-gray-500">Last Month vs This Month</p>
+              </div>
+              <div className="text-sm text-gray-600">
+                <span className="mr-4"><span className="inline-block w-3 h-3 bg-gray-300 rounded-sm mr-1"></span>Last</span>
+                <span><span className="inline-block w-3 h-3 bg-orange-500 rounded-sm mr-1"></span>This</span>
+              </div>
+            </div>
+            <div className="mt-4 h-48 flex items-end gap-8 px-6">
+              <div className="flex-1 flex flex-col items-center">
+                <div className="w-12 bg-gray-300 rounded-t" style={{ height: `${Math.max(8, Math.round((metrics.lastM.total / Math.max(metrics.thisM.total, metrics.lastM.total, 1)) * 160))}px` }}></div>
+                <div className="mt-2 text-xs text-gray-700">Last Month</div>
+                <div className="text-sm font-semibold text-gray-900">{formatCurrency(metrics.lastM.total)}</div>
+              </div>
+              <div className="flex-1 flex flex-col items-center">
+                <div className="w-12 bg-orange-500 rounded-t" style={{ height: `${Math.max(8, Math.round((metrics.thisM.total / Math.max(metrics.thisM.total, metrics.lastM.total, 1)) * 160))}px` }}></div>
+                <div className="mt-2 text-xs text-gray-700">This Month</div>
+                <div className="text-sm font-semibold text-gray-900">{formatCurrency(metrics.thisM.total)}</div>
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 bg-white rounded-xl border border-orange-100 p-4">
+            <h4 className="text-md font-bold text-gray-900 mb-3">Breakdown by Space Type (This Month)</h4>
+            {Object.entries(monthlyBreakdown).length === 0 ? (
+              <div className="text-sm text-gray-500">No payments recorded this month</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Space Type</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Payments</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Base</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">GST</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {Object.entries(monthlyBreakdown).map(([type, stats]) => (
+                      <tr key={type}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{type}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{stats.count}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(stats.base)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-700 font-semibold">{formatCurrency(stats.gst)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-700">{formatCurrency(stats.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : activeTab === 'pending' ? (
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-orange-100">
+          <div className="px-6 py-4 border-b border-orange-100 bg-gradient-to-r from-orange-50 to-white">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Pending Payments (All Months)</h3>
+                <p className="text-sm text-gray-500 mt-1">One row per pending month per assignment since start date</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <input type="checkbox" checked={groupPendingByMonth} onChange={(e)=>setGroupPendingByMonth(e.target.checked)} className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500 cursor-pointer" />
+                Group by Month
+              </label>
+            </div>
+          </div>
+          <div className="p-6">
+            {pendingRows.length === 0 ? (
+              <div className="text-sm text-gray-500">No pending payments for this month 🎉</div>
+            ) : !groupPendingByMonth ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Customer</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Space</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Month</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Monthly Price</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {pendingRows.map(({ a, monthKey }) => {
+                      const c = customers.find((cc) => cc.id === a.customer_id)
+                      const s = ((a.space as Space) || spaces.find((sp) => sp.id === a.space_id))
+                      const name = c?.first_name && c?.last_name ? `${c.first_name} ${c.last_name}` : c?.name || '-'
+                      return (
+                        <tr key={`${a.id}-${monthKey}`} className="hover:bg-orange-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{s?.name} <span className="text-gray-400">({s?.type})</span></td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{monthKey}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(a.monthly_price || s?.price_per_day || 0)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <button onClick={() => startCollect(a, monthKey)} className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold">Collect</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {Object.keys(pendingGroups).sort().map((mk) => {
+                  const sect = pendingGroups[mk]
+                  return (
+                    <div key={mk} className="border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
+                        <div className="font-bold">{mk}</div>
+                        <div className="text-sm opacity-90">{sect.rows.length} pending • Base {formatCurrency(sect.totals.base)} • GST {formatCurrency(sect.totals.gst)} • Total {formatCurrency(sect.totals.total)}</div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Customer</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Space</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Est. Base</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Est. GST</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Est. Total</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {sect.rows.map(({ a, monthKey }) => {
+                              const c = customers.find((cc) => cc.id === a.customer_id)
+                              const s = ((a.space as Space) || spaces.find((sp) => sp.id === a.space_id))
+                              const base = (a.monthly_price || s?.price_per_day || 0)
+                              const gst = c?.pays_gst ? base * 0.18 : 0
+                              const total = base + gst
+                              const name = c?.first_name && c?.last_name ? `${c.first_name} ${c.last_name}` : c?.name || '-'
+                              return (
+                                <tr key={`${a.id}-${monthKey}`} className="hover:bg-orange-50">
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{name}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{s?.name} <span className="text-gray-400">({s?.type})</span></td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(base)}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-green-700 font-semibold">{gst ? formatCurrency(gst) : '-'}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-700">{formatCurrency(total)}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    <button onClick={() => startCollect(a, monthKey)} className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold">Collect</button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : activeTab === 'list' ? (
       <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-orange-100">
         <div className="px-6 py-4 border-b border-orange-100 bg-gradient-to-r from-orange-50 to-white">
           <h3 className="text-lg font-bold text-gray-900">All Payments</h3>
           <p className="text-sm text-gray-500 mt-1">Complete payment history with space assignments</p>
+        </div>
+        <div className="p-6 border-b border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Search</label>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Customer, space, destination, ref..."
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 placeholder:text-gray-400"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">From</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">To</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Destination</label>
+              <select value={destinationFilter} onChange={(e) => setDestinationFilter(e.target.value)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium">
+                <option value="all">All</option>
+                {destinationOptions.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">GST</label>
+              <select value={gstFilter} onChange={(e) => setGstFilter(e.target.value as any)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium">
+                <option value="all">All</option>
+                <option value="yes">Includes GST</option>
+                <option value="no">No GST</option>
+              </select>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Sort By</label>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium">
+                <option value="date_desc">Date (Newest First)</option>
+                <option value="date_asc">Date (Oldest First)</option>
+                <option value="amount_desc">Amount (High to Low)</option>
+                <option value="amount_asc">Amount (Low to High)</option>
+                <option value="customer_asc">Customer (A-Z)</option>
+                <option value="space_asc">Space (A-Z)</option>
+                <option value="space_desc">Space (Z-A)</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <p className="text-sm text-gray-600">Showing <span className="font-semibold text-orange-700">{filteredPayments.length}</span> of <span className="font-semibold">{payments.length}</span> payments</p>
+            </div>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -486,7 +1039,7 @@ export default function PaymentsNew() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {payments.map((payment) => {
+              {filteredPayments.map((payment) => {
                 const customer = payment.customer as Customer
                 const assignment = payment.assignment as Assignment
                 const space = assignment?.space as Space
@@ -525,6 +1078,162 @@ export default function PaymentsNew() {
           </table>
         </div>
       </div>
+      ) : activeTab === 'reports' ? (
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-orange-100">
+          <div className="px-6 py-4 border-b border-orange-100 bg-gradient-to-r from-orange-50 to-white">
+            <h3 className="text-lg font-bold text-gray-900">Reports</h3>
+            <p className="text-sm text-gray-500 mt-1">Historical payments grouped by month and year</p>
+          </div>
+          <div className="p-6 border-b border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Sort Months</label>
+                <select value={reportsSort} onChange={(e) => setReportsSort(e.target.value as 'desc' | 'asc')} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium">
+                  <option value="desc">Newest First</option>
+                  <option value="asc">Oldest First</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Sort Rows</label>
+                <select value={reportsRowSort} onChange={(e) => setReportsRowSort(e.target.value as any)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium">
+                  <option value="date_asc">Date (Oldest First)</option>
+                  <option value="date_desc">Date (Newest First)</option>
+                  <option value="space_asc">Space (A-Z)</option>
+                  <option value="space_desc">Space (Z-A)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="p-6">
+            {(() => {
+              const groups: Record<string, Payment[]> = {}
+              for (const p of payments) {
+                const key = (p.payment_for_date ? p.payment_for_date.substring(0, 7) : p.payment_date.substring(0, 7))
+                if (!groups[key]) groups[key] = []
+                groups[key].push(p)
+              }
+              const nowKey = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 7)
+              const thisMonthList = groups[nowKey] || []
+              const thisMonthTotals = thisMonthList.reduce((acc, p) => {
+                const base = p.amount - (p.gst_amount || 0)
+                acc.base += base
+                acc.gst += p.gst_amount || 0
+                acc.total += p.amount
+                return acc
+              }, { base: 0, gst: 0, total: 0 })
+              const otherKeys = Object.keys(groups).filter((k) => k !== nowKey)
+              const months = Object.keys(groups).sort((a, b) => reportsSort === 'desc' ? b.localeCompare(a) : a.localeCompare(b))
+              if (months.length === 0) return (<div className="text-sm text-gray-500">No payment history available</div>)
+              return (
+                <div className="space-y-6">
+                  {/* This Month */}
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
+                      <div className="font-bold">This Month ({nowKey})</div>
+                      <div className="text-sm opacity-90">{thisMonthList.length} payments • Base {formatCurrency(thisMonthTotals.base)} • GST {formatCurrency(thisMonthTotals.gst)} • Total {formatCurrency(thisMonthTotals.total)}</div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Customer</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Space</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Base</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">GST</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Total</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Destination</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {thisMonthList
+                            .slice()
+                            .sort(compareReportRows)
+                            .map((payment) => {
+                              const customer = payment.customer as Customer
+                              const assignment = payment.assignment as Assignment
+                              const space = assignment?.space as Space
+                              const baseAmount = payment.amount - (payment.gst_amount || 0)
+                              return (
+                                <tr key={payment.id} className="hover:bg-orange-50 transition-colors">
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{payment.assignment_id ? (customer?.first_name && customer?.last_name ? `${customer.first_name} ${customer.last_name}` : customer?.name || '-') : 'Day Pass'}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{space ? (<div><span className="font-semibold text-orange-700">{space.name}</span><span className="text-gray-500 ml-2">({space.type})</span></div>) : (<span className="text-gray-400">-</span>)}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(baseAmount)}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.includes_gst ? (<span className="text-green-700 font-semibold">{formatCurrency(payment.gst_amount || 0)}</span>) : (<span className="text-gray-400">-</span>)}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-700">{formatCurrency(payment.amount)}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDate(payment.payment_date)}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-medium">{payment.destination || '-'}</td>
+                                </tr>
+                              )
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* All Other Months grouped by YYYY-MM */}
+                  {months.map((m) => {
+                    if (m === nowKey) return null
+                    const list = groups[m]
+                    const totals = list.reduce((acc, p) => {
+                      const base = p.amount - (p.gst_amount || 0)
+                      acc.base += base
+                      acc.gst += p.gst_amount || 0
+                      acc.total += p.amount
+                      return acc
+                    }, { base: 0, gst: 0, total: 0 })
+                    return (
+                      <div key={m} className="border border-gray-200 rounded-xl overflow-hidden">
+                        <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
+                          <div className="font-bold">{m}</div>
+                          <div className="text-sm opacity-90">{list.length} payments • Base {formatCurrency(totals.base)} • GST {formatCurrency(totals.gst)} • Total {formatCurrency(totals.total)}</div>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Customer</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Space</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Base</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">GST</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Total</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Destination</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {list
+                                .slice()
+                                .sort(compareReportRows)
+                                .map((payment) => {
+                                  const customer = payment.customer as Customer
+                                  const assignment = payment.assignment as Assignment
+                                  const space = assignment?.space as Space
+                                  const baseAmount = payment.amount - (payment.gst_amount || 0)
+                                  return (
+                                    <tr key={payment.id} className="hover:bg-orange-50 transition-colors">
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{payment.assignment_id ? (customer?.first_name && customer?.last_name ? `${customer.first_name} ${customer.last_name}` : customer?.name || '-') : 'Day Pass'}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{space ? (<div><span className="font-semibold text-orange-700">{space.name}</span><span className="text-gray-500 ml-2">({space.type})</span></div>) : (<span className="text-gray-400">-</span>)}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(baseAmount)}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.includes_gst ? (<span className="text-green-700 font-semibold">{formatCurrency(payment.gst_amount || 0)}</span>) : (<span className="text-gray-400">-</span>)}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-700">{formatCurrency(payment.amount)}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDate(payment.payment_date)}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-medium">{payment.destination || '-'}</td>
+                                    </tr>
+                                  )
+                                })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      ) : null}
 
       {showModal && (
         <div className="fixed inset-0 bg-white bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
@@ -594,6 +1303,10 @@ export default function PaymentsNew() {
                           onChange={(e) => setFormData((prev) => ({ ...prev, payment_for_month: e.target.value }))}
                           className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white hover:border-purple-400 text-gray-900"
                         />
+                        <div className="flex items-center pt-1">
+                          <input id="late-month-manual" type="checkbox" checked={isLateMonth} onChange={(e) => setIsLateMonth(e.target.checked)} className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer" />
+                          <label htmlFor="late-month-manual" className="ml-2 text-sm text-gray-700 font-medium cursor-pointer">Late payment (previous month)</label>
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <label className="block text-sm font-semibold text-gray-700">Payment Destination <span className="text-red-500">*</span></label>
@@ -614,7 +1327,7 @@ export default function PaymentsNew() {
                         <label className="block text-sm font-semibold text-gray-700">Assignment (Space) <span className="text-red-500">*</span></label>
                         <select required value={formData.assignment_id} onChange={(e) => handleAssignmentChange(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all bg-white hover:border-gray-400 text-gray-900 font-medium">
                           <option value="">Select Assignment</option>
-                          {assignments.filter((a) => a.status === 'active').map((assignment) => {
+                          {filteredAssignmentsByMonth.map((assignment) => {
                             const customer = (assignment.customer as Customer) || customers.find((c) => c.id === assignment.customer_id)
                             const customerName = customer?.first_name && customer?.last_name ? `${customer.first_name} ${customer.last_name}` : customer?.name || 'Customer'
                             const space = (assignment.space as Space) || spaces.find((s) => s.id === assignment.space_id)
@@ -709,6 +1422,10 @@ export default function PaymentsNew() {
                       <div className="space-y-2">
                         <label className="block text-sm font-semibold text-gray-700">Payment For Month <span className="text-red-500">*</span></label>
                         <input type="month" required value={formData.payment_for_month || new Date().toISOString().slice(0, 7)} onChange={(e) => setFormData((prev) => ({ ...prev, payment_for_month: e.target.value }))} className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all bg-white hover:border-gray-400 text-gray-900" />
+                        <div className="flex items-center pt-1">
+                          <input id="late-month" type="checkbox" checked={isLateMonth} onChange={(e) => setIsLateMonth(e.target.checked)} className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer" />
+                          <label htmlFor="late-month" className="ml-2 text-sm text-gray-700 font-medium cursor-pointer">Late payment (previous month)</label>
+                        </div>
                       </div>
                     </div>
                     <div className="mt-4 space-y-2">

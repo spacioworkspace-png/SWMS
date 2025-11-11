@@ -71,6 +71,25 @@ export default function Customers() {
     }
   }
 
+  const importAllFromSheet = async () => {
+    if (!confirm('Import all new customers from Google Sheet into the database?')) return
+    try {
+      const res = await fetch('/api/customers/sheets-import', {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const msg = (await res.json()).error || 'Import failed'
+        throw new Error(msg)
+      }
+      const { inserted, skipped, totalRows } = await res.json()
+      alert(`Import complete. Inserted: ${inserted}, Skipped (existing): ${skipped}, Sheet rows: ${totalRows}`)
+      await fetchCustomers()
+      await fetchActiveAssignments()
+    } catch (err: any) {
+      alert(`Import error: ${err.message || err}`)
+    }
+  }
+
   // Filter and sort customers
   useEffect(() => {
     let filtered = [...customers]
@@ -304,6 +323,57 @@ export default function Customers() {
     })
   }
 
+  const autoPopulateFromSheet = async () => {
+    try {
+      const email = formData.email?.trim().toLowerCase()
+      const phone = formData.mobile_number?.replace(/\s+/g, '')
+      if (!email && !phone) {
+        alert('Enter email or mobile number first to look up in the sheet.')
+        return
+      }
+
+      const params = new URLSearchParams()
+      if (email) params.set('email', email)
+      if (phone) params.set('phone', phone)
+
+      const res = await fetch(`/api/customers/sheets-lookup?${params.toString()}`)
+      if (!res.ok) {
+        const msg = (await res.json()).error || 'Lookup failed'
+        throw new Error(msg)
+      }
+      const data = await res.json()
+      const candidate = data.match || (data.matches && data.matches[0])
+      if (!candidate) {
+        alert('No matching entry found in the Google Sheet.')
+        return
+      }
+
+      setFormData((prev) => {
+        const updated: any = { ...prev }
+        Object.entries(candidate).forEach(([k, v]) => {
+          if (v !== '' && v !== null && v !== undefined) {
+            // Only overwrite when the sheet has a non-empty value
+            // registration_type must remain a valid value
+            if (k === 'registration_type' && (v === 'individual' || v === 'company')) {
+              updated[k] = v
+            } else if (k !== 'registration_type') {
+              // Types in formData keys match candidate mapping from API
+              // @ts-ignore
+              updated[k] = v
+            }
+          }
+        })
+        return updated
+      })
+
+      if (data.matches && data.matches.length > 1) {
+        alert(`Multiple matches found (${data.matches.length}). The first match was applied.`)
+      }
+    } catch (err: any) {
+      alert(`Auto-populate error: ${err.message || err}`)
+    }
+  }
+
   if (loading) {
     return <div className="p-8 text-center animate-pulse">Loading...</div>
   }
@@ -312,30 +382,38 @@ export default function Customers() {
     <div className="p-8 animate-fade-in">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent">
             Customers
           </h2>
           <p className="text-sm text-gray-500 mt-1">Manage customer information and details</p>
         </div>
         {canEdit(user) && (
-          <button
-            onClick={() => {
-              setEditingCustomer(null)
-              resetForm()
-              setShowModal(true)
-            }}
-            className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-2 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center"
-          >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Customer
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setEditingCustomer(null)
+                resetForm()
+                setShowModal(true)
+              }}
+              className="bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-2 rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Customer
+            </button>
+            <button
+              onClick={importAllFromSheet}
+              className="px-6 py-2 rounded-lg border-2 border-orange-600 text-orange-700 hover:bg-orange-50 transition-all duration-200 font-semibold"
+            >
+              Import new from Google Sheet
+            </button>
+          </div>
         )}
       </div>
 
       {/* Search, Filter, and Sort Controls */}
-      <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-blue-100">
+      <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-orange-100">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Search */}
           <div>
@@ -345,7 +423,7 @@ export default function Customers() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search by name, email, or company..."
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900 placeholder:text-gray-400"
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 placeholder:text-gray-400"
             />
           </div>
 
@@ -355,7 +433,7 @@ export default function Customers() {
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900 font-medium"
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
             >
               <option value="all">All Types</option>
               <option value="individual">Individual</option>
@@ -524,6 +602,15 @@ export default function Customers() {
                     <span className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">1</span>
                     Personal Information
                   </h4>
+                  <div className="mb-4">
+                    <button
+                      type="button"
+                      onClick={autoPopulateFromSheet}
+                      className="text-sm px-3 py-2 rounded-md border-2 border-blue-500 text-blue-600 hover:bg-blue-50 transition-colors font-semibold"
+                    >
+                      Auto-populate from Google Sheet
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <label className="block text-sm font-semibold text-gray-700">

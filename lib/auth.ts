@@ -1,6 +1,6 @@
 'use client'
 
-export type UserRole = 'shan' | 'appa'
+export type UserRole = 'shan'
 
 export interface User {
   username: string
@@ -13,11 +13,6 @@ export const users: User[] = [
     username: 'SHAN',
     role: 'shan',
     password: 'SPACIO',
-  },
-  {
-    username: 'APPA',
-    role: 'appa',
-    password: 'SPACIO', // Same password for both
   },
 ]
 

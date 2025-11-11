@@ -24,10 +24,10 @@ type Lead = {
   updated_at: string
 }
 
-export default function Leads() {
+export default function Leads({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
+  const [showModal, setShowModal] = useState(mode === 'formOnly')
   const [editing, setEditing] = useState<Lead | null>(null)
   const [viewing, setViewing] = useState<Lead | null>(null)
   const [search, setSearch] = useState('')
@@ -174,39 +174,43 @@ export default function Leads() {
     return leads.filter((l) => l.next_follow_up_date && l.next_follow_up_date <= todayStr).length
   }, [leads])
 
-  if (loading) return <div className="p-8 text-center">Loading...</div>
+  if (loading && mode !== 'formOnly') return <div className="p-8 text-center">Loading...</div>
 
   return (
     <div className="p-8 animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900">Leads</h2>
-          <p className="text-sm text-gray-500 mt-1">Capture and manage new leads effectively</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <div className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold">
-            Reminders due: {remindersCount}
+      {mode !== 'formOnly' ? (
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-900">Leads</h2>
+            <p className="text-sm text-gray-500 mt-1">Capture and manage new leads effectively</p>
           </div>
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <button onClick={() => setViewMode('table')} className={`px-3 py-1 text-sm ${viewMode==='table' ? 'bg-gray-200 font-semibold' : ''}`}>Table</button>
-            <button onClick={() => setViewMode('kanban')} className={`px-3 py-1 text-sm ${viewMode==='kanban' ? 'bg-gray-200 font-semibold' : ''}`}>Kanban</button>
+          <div className="flex items-center space-x-3">
+            <div className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold">Reminders due: {remindersCount}</div>
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <button onClick={() => setViewMode('table')} className={`px-3 py-1 text-sm ${viewMode==='table' ? 'bg-gray-200 font-semibold' : ''}`}>Table</button>
+              <button onClick={() => setViewMode('kanban')} className={`px-3 py-1 text-sm ${viewMode==='kanban' ? 'bg-gray-200 font-semibold' : ''}`}>Kanban</button>
+            </div>
+            <button onClick={openNew} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-sm font-semibold flex items-center">
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              Add Lead
+            </button>
+            <Link href="/" className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition">Back to Dashboard</Link>
           </div>
-          <button onClick={openNew} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-sm font-semibold flex items-center">
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            Add Lead
-          </button>
-          <Link href="/" className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition">Back to Dashboard</Link>
         </div>
-      </div>
-
+      ) : (
+        <div className="mb-4">
+          <h2 className="text-2xl font-bold text-gray-900">Quick Add Lead (Public)</h2>
+          <p className="text-sm text-gray-500">Use the form below to add a new lead.</p>
+        </div>
+      )}
       <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200 mb-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search leads..." className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-500" />
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900">
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search leads..." className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900 placeholder:text-gray-500" />
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900">
             <option value="all">All Statuses</option>
             {LEAD_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
           </select>
-          <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value as any)} className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900">
+          <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value as any)} className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900">
             <option value="all">All Sources</option>
             {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
           </select>
@@ -214,7 +218,7 @@ export default function Leads() {
         </div>
       </div>
 
-      {viewMode === 'table' ? (
+      {mode !== 'formOnly' ? (viewMode === 'table' ? (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -239,10 +243,10 @@ export default function Leads() {
                       <div className="text-gray-500">{lead.email || '-'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">{lead.source.replace('_',' ')}</span>
+                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">{lead.source.replace('_',' ')}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">{lead.status.replace('_',' ')}</span>
+                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">{lead.status.replace('_',' ')}</span>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm ${lead.next_follow_up_date && lead.next_follow_up_date <= todayStr ? 'text-amber-700 font-semibold' : 'text-gray-600'}`}>{lead.next_follow_up_date || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm hidden sm:table-cell">
@@ -258,8 +262,8 @@ export default function Leads() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button onClick={() => openView(lead)} className="text-blue-600 hover:text-blue-800 mr-4 font-semibold">View</button>
-                      <button onClick={() => openEdit(lead)} className="text-indigo-600 hover:text-indigo-800 mr-4 font-semibold">Edit</button>
+                      <button onClick={() => openView(lead)} className="text-orange-600 hover:text-orange-800 mr-4 font-semibold">View</button>
+                      <button onClick={() => openEdit(lead)} className="text-orange-600 hover:text-orange-800 mr-4 font-semibold">Edit</button>
                       <button onClick={() => deleteLead(lead.id)} className="text-red-600 hover:text-red-800 font-semibold">Delete</button>
                     </td>
                   </tr>
@@ -280,7 +284,7 @@ export default function Leads() {
                       <div>
                         <div className="text-sm font-semibold text-gray-900">{lead.name}</div>
                         <div className="text-xs text-gray-600">{lead.phone || '-'}{lead.email ? ` | ${lead.email}` : ''}</div>
-                        <div className="mt-1 text-xs"><span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">{lead.source.replace('_',' ')}</span></div>
+                        <div className="mt-1 text-xs"><span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-semibold">{lead.source.replace('_',' ')}</span></div>
                         {(lead.tags && lead.tags.length > 0) && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {lead.tags.map((t: string, idx: number) => (
@@ -290,8 +294,8 @@ export default function Leads() {
                         )}
                       </div>
                       <div className="flex items-center space-x-3">
-                        <button onClick={() => openView(lead)} className="text-blue-600 hover:text-blue-800 text-xs font-semibold">View</button>
-                        <button onClick={() => openEdit(lead)} className="text-blue-600 hover:text-blue-800 text-xs font-semibold">Edit</button>
+                        <button onClick={() => openView(lead)} className="text-orange-600 hover:text-orange-800 text-xs font-semibold">View</button>
+                        <button onClick={() => openEdit(lead)} className="text-orange-600 hover:text-orange-800 text-xs font-semibold">Edit</button>
                       </div>
                     </div>
                     <div className="mt-2 text-xs text-gray-600">
@@ -306,7 +310,7 @@ export default function Leads() {
             </div>
           ))}
         </div>
-      )}
+      )) : null}
 
       {showModal && (
         <div className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -322,40 +326,40 @@ export default function Leads() {
             <form onSubmit={saveLead} className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1 md:col-span-2">
                 <label className="text-sm font-semibold text-gray-900">Name <span className="text-red-500">*</span></label>
-                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-500" />
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900 placeholder:text-gray-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-gray-900">Phone</label>
-                <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-500" />
+                <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900 placeholder:text-gray-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-gray-900">Email</label>
-                <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-500" />
+                <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900 placeholder:text-gray-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-gray-900">Source <span className="text-red-500">*</span></label>
-                <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value as LeadSource })} required className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900">
+                <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value as LeadSource })} required className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900">
                   <option value="">Select source</option>
                   {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-gray-900">Status</label>
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as LeadStatus })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900">
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as LeadStatus })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900">
                   {LEAD_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-gray-900">Next Follow-up</label>
-                <input type="date" value={form.next_follow_up_date} onChange={(e) => setForm({ ...form, next_follow_up_date: e.target.value })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900" />
+                <input type="date" value={form.next_follow_up_date} onChange={(e) => setForm({ ...form, next_follow_up_date: e.target.value })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900" />
               </div>
               <div className="space-y-1 md:col-span-2">
                 <label className="text-sm font-semibold text-gray-900">Tags (comma separated)</label>
-                <input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-500" />
+                <input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900 placeholder:text-gray-500" />
               </div>
               <div className="space-y-1 md:col-span-2">
                 <label className="text-sm font-semibold text-gray-900">Notes</label>
-                <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-500" />
+                <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900 placeholder:text-gray-500" />
               </div>
               <div className="md:col-span-2 flex justify-end space-x-3 pt-2">
                 <button type="button" onClick={() => { setShowModal(false); setEditing(null); resetForm() }} className="px-5 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>

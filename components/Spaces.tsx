@@ -177,7 +177,7 @@ export default function Spaces() {
     <div className="p-8 animate-fade-in">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent">
             Spaces
           </h2>
           <p className="text-sm text-gray-500 mt-1">
@@ -191,7 +191,7 @@ export default function Spaces() {
               resetForm()
               setShowModal(true)
             }}
-            className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-2 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center"
+            className="bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-2 rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center"
           >
             <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -202,7 +202,7 @@ export default function Spaces() {
       </div>
 
       {/* Search, Filter, and Sort Controls */}
-      <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-blue-100">
+      <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-orange-100">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Search */}
           <div>
@@ -212,7 +212,7 @@ export default function Spaces() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search by name or type..."
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900 placeholder:text-gray-400"
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 placeholder:text-gray-400"
             />
           </div>
 
@@ -222,7 +222,7 @@ export default function Spaces() {
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900 font-medium"
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
             >
               <option value="all">All Types</option>
               {spaceTypes.map((type) => (
@@ -240,7 +240,7 @@ export default function Spaces() {
               onClick={() => setFilterAvailable(!filterAvailable)}
               className={`w-full px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
                 filterAvailable
-                  ? 'bg-green-600 text-white hover:bg-green-700 shadow-md'
+                  ? 'bg-orange-600 text-white hover:bg-orange-700 shadow-md'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
@@ -379,7 +379,7 @@ export default function Spaces() {
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="e.g., Cabin A1, Desk 5, Meeting Room 1"
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white hover:border-gray-400 text-gray-900 placeholder:text-gray-400"
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white hover:border-gray-400 text-gray-900 placeholder:text-gray-400"
                     />
                   </div>
 
@@ -391,7 +391,7 @@ export default function Spaces() {
                       required
                       value={formData.type}
                       onChange={(e) => setFormData({ ...formData, type: e.target.value as SpaceType })}
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white hover:border-gray-400 font-medium text-gray-900"
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white hover:border-gray-400 font-medium text-gray-900"
                     >
                       {spaceTypes.map((type) => (
                         <option key={type} value={type}>
@@ -399,10 +399,10 @@ export default function Spaces() {
                         </option>
                       ))}
                     </select>
-                    <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="mt-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
                       <p className="text-sm text-gray-700">
                         <span className="font-semibold">Billing Cycle:</span>{' '}
-                        <span className="text-blue-700 font-medium capitalize">{getBillingCycle(formData.type)}</span>
+                        <span className="text-orange-700 font-medium capitalize">{getBillingCycle(formData.type)}</span>
                       </p>
                     </div>
                   </div>
@@ -415,7 +415,7 @@ export default function Spaces() {
                         value={formData.capacity}
                         onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
                         placeholder="Number of people"
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white hover:border-gray-400 text-gray-900 placeholder:text-gray-400"
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white hover:border-gray-400 text-gray-900 placeholder:text-gray-400"
                       />
                     </div>
                     <div className="space-y-2">
@@ -436,23 +436,23 @@ export default function Spaces() {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-gray-700">Description</label>
+                    <label className="block text-sm font-semibold text-orange-700">Description</label>
                     <textarea
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       placeholder="Add any additional details about this space..."
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white hover:border-gray-400 resize-none text-gray-900 placeholder:text-gray-400"
+                      className="w-full px-4 py-3 border-2 border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white hover:border-orange-400 resize-none text-orange-900 placeholder:text-orange-400"
                       rows={4}
                     />
                   </div>
 
-                  <div className="flex items-center p-4 bg-white rounded-lg border-2 border-gray-200">
+                  <div className="flex items-center p-4 bg-orange-50 rounded-lg border-2 border-orange-200">
                     <input
                       type="checkbox"
                       id="is_available"
                       checked={formData.is_available}
                       onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
-                      className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                      className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500 cursor-pointer"
                     />
                     <label htmlFor="is_available" className="ml-3 text-sm font-semibold text-gray-700 cursor-pointer">
                       Space is currently available
