@@ -1,14 +1,17 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
+import Link from "next/link"
 import PaymentsNew from "@/components/PaymentsNew"
-import Leads from "@/components/Leads"
 import { supabase } from "@/lib/supabase"
 
 export default function QuickAddPage() {
+  const searchParams = useSearchParams()
   const [leadFormKey, setLeadFormKey] = useState(0)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [showLeadModal, setShowLeadModal] = useState(false)
+  const [manualType, setManualType] = useState<'daypass' | 'meeting'>('daypass')
+  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0])
   const [activeTab, setActiveTab] = useState<'quick' | 'pending'>('quick')
   const [loadingPending, setLoadingPending] = useState(true)
   const [assignments, setAssignments] = useState<any[]>([])
@@ -23,7 +26,7 @@ export default function QuickAddPage() {
         const [asgRes, payRes] = await Promise.all([
           supabase
             .from('assignments')
-            .select(`id, status, monthly_price, customer:customers(id, name, first_name, last_name), space:spaces(id, name, type)`) 
+            .select(`id, status, start_date, end_date, monthly_price, customer:customers(id, name, first_name, last_name), space:spaces(id, name, type)`) 
             .eq('status', 'active'),
           supabase
             .from('payments')
@@ -42,47 +45,86 @@ export default function QuickAddPage() {
     load()
   }, [])
 
+  // Allow selecting tab via URL, e.g. /quick-add?tab=pending
+  useEffect(() => {
+    const tab = (searchParams?.get('tab') || '').toLowerCase()
+    if (tab === 'pending') {
+      setActiveTab('pending')
+    } else if (tab === 'quick') {
+      setActiveTab('quick')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
   const monthKey = useMemo(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,7), [])
   const pending = useMemo(() => {
     const list = (assignments || [])
       .filter((a) => a.status === 'active')
-      .filter((a) => !payments.some((p) => p.assignment_id === a.id && ((p.payment_for_date || p.payment_date || '').startsWith(monthKey))))
+      .filter((a) => {
+        const startKey = (a.start_date || '').slice(0,7) || monthKey
+        const endKey = (a.end_date || '').slice(0,7) || ''
+        if (monthKey < startKey) return false
+        if (endKey && monthKey > endKey) return false
+        return !payments.some((p) => p.assignment_id === a.id && ((p.payment_for_date || p.payment_date || '').startsWith(monthKey)))
+      })
       .sort((a, b) => (a.space?.name || '').localeCompare(b.space?.name || ''))
     return list
   }, [assignments, payments, monthKey])
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Quick Add (Public)</h1>
-        <p className="text-sm text-gray-600">Use the full forms below to add a Payment or a Lead. No login required.</p>
+        <h1 className="text-2xl font-bold text-gray-900">Quick Collect</h1>
+        <p className="text-sm text-gray-600">Pick a day to record Day Pass or Meeting Room payments, or view pending rent.</p>
       </div>
 
       {/* Tabs */}
       <div className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-gray-200 mb-4">
         <div className="flex gap-2 p-1">
-          <button type="button" onClick={() => setActiveTab('quick')} className={`px-4 py-2 rounded-md text-sm font-semibold border ${activeTab==='quick' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>Quick Add</button>
+          <button type="button" onClick={() => setActiveTab('quick')} className={`px-4 py-2 rounded-md text-sm font-semibold border ${activeTab==='quick' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>Day Entry</button>
           <button type="button" onClick={() => setActiveTab('pending')} className={`px-4 py-2 rounded-md text-sm font-semibold border ${activeTab==='pending' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>Pending Rent</button>
         </div>
       </div>
 
       {activeTab === 'quick' && (
-        <>
-          {/* Top actions */}
-          <div className="mb-6 flex items-center gap-3">
-            <button onClick={() => setShowPaymentModal(true)} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700">Add Payment</button>
-            <button onClick={() => { setShowLeadModal(true); setLeadFormKey((k) => k + 1) }} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Add New Lead</button>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Quick Day Entry</h2>
+          <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setManualType('daypass'); setShowPaymentModal(true) }}
+                className="px-4 py-2 rounded-md bg-emerald-600 text-white font-semibold hover:bg-emerald-700"
+              >
+                Day Pass
+              </button>
+              <button
+                type="button"
+                onClick={() => { setManualType('meeting'); setShowPaymentModal(true) }}
+                className="px-4 py-2 rounded-md bg-indigo-600 text-white font-semibold hover:bg-indigo-700"
+              >
+                Meeting Room
+              </button>
+            </div>
           </div>
 
-          {/* Conditionally mounted modals (form-only) */}
-          {showPaymentModal && <PaymentsNew mode="formOnly" />}
-          {showLeadModal && <Leads key={leadFormKey} mode="formOnly" />}
-
-          {/* Leads list */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Leads</h2>
-            <Leads />
-          </div>
-        </>
+          {showPaymentModal && (
+            <PaymentsNew
+              mode="formOnly"
+              initialManualType={manualType}
+              initialDate={selectedDate}
+              onSaved={() => { alert('Saved successfully'); window.location.href = '/collect' }}
+            />
+          )}
+        </div>
       )}
 
       {activeTab === 'pending' && (
@@ -104,6 +146,7 @@ export default function QuickAddPage() {
                     <th className="px-4 py-2 text-left text-xs font-bold text-gray-600 uppercase">Type</th>
                     <th className="px-4 py-2 text-left text-xs font-bold text-gray-600 uppercase">Customer</th>
                     <th className="px-4 py-2 text-left text-xs font-bold text-gray-600 uppercase">Monthly Price</th>
+                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-600 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -117,6 +160,14 @@ export default function QuickAddPage() {
                         <td className="px-4 py-2 text-sm text-gray-700">{a.space?.type || '-'}</td>
                         <td className="px-4 py-2 text-sm text-gray-700">{customerName}</td>
                         <td className="px-4 py-2 text-sm text-gray-900">₹{(a.monthly_price || a.space?.price_per_day || 0).toLocaleString()}</td>
+                        <td className="px-4 py-2 text-sm">
+                          <Link
+                            href={`/payments?assignment_id=${a.id}&redirect=collect`}
+                            className="inline-flex items-center px-3 py-1.5 rounded-md bg-orange-600 text-white font-semibold hover:bg-orange-700"
+                          >
+                            Collect
+                          </Link>
+                        </td>
                       </tr>
                     )
                   })}

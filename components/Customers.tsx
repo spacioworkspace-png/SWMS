@@ -14,7 +14,6 @@ export default function Customers() {
   const [activeAssignments, setActiveAssignments] = useState<Map<string, Assignment>>(new Map())
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [gstFilter, setGstFilter] = useState<string>('all')
   const [sortBy, setSortBy] = useState<string>('name_asc')
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -40,7 +39,6 @@ export default function Customers() {
     company_gstin: '',
     nature_of_business: '',
     company_registration_doc_url: '',
-    pays_gst: false,
   })
 
   useEffect(() => {
@@ -50,6 +48,7 @@ export default function Customers() {
 
   const fetchActiveAssignments = async () => {
     try {
+      const today = new Date().toISOString().split('T')[0]
       const { data, error } = await supabase
         .from('assignments')
         .select(`
@@ -57,6 +56,7 @@ export default function Customers() {
           space:spaces(*)
         `)
         .eq('status', 'active')
+        .or(`end_date.is.null,end_date.gte.${today}`)
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -115,10 +115,7 @@ export default function Customers() {
       filtered = filtered.filter((c) => c.registration_type === typeFilter)
     }
 
-    // GST filter
-    if (gstFilter !== 'all') {
-      filtered = filtered.filter((c) => c.pays_gst === (gstFilter === 'yes'))
-    }
+    // GST logic removed from customers; handled at assignment level
 
     // Sort
     filtered.sort((a, b) => {
@@ -143,7 +140,7 @@ export default function Customers() {
     })
 
     setFilteredCustomers(filtered)
-  }, [customers, searchTerm, typeFilter, gstFilter, sortBy])
+  }, [customers, searchTerm, typeFilter, sortBy])
 
   const fetchCustomers = async () => {
     try {
@@ -186,7 +183,6 @@ export default function Customers() {
         nature_of_business: formData.nature_of_business || null,
         company_registration_doc_url: formData.company_registration_doc_url || null,
         tax_id: formData.company_gstin || null,
-        pays_gst: formData.pays_gst || formData.registration_type === 'company',
       }
 
       if (editingCustomer) {
@@ -230,7 +226,6 @@ export default function Customers() {
       company_gstin: customer.company_gstin || customer.tax_id || '',
       nature_of_business: customer.nature_of_business || '',
       company_registration_doc_url: customer.company_registration_doc_url || '',
-      pays_gst: customer.pays_gst || false,
     })
     setShowModal(true)
   }
@@ -319,7 +314,6 @@ export default function Customers() {
       company_gstin: '',
       nature_of_business: '',
       company_registration_doc_url: '',
-      pays_gst: false,
     })
   }
 
@@ -441,19 +435,7 @@ export default function Customers() {
             </select>
           </div>
 
-          {/* GST Filter */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">GST Status</label>
-            <select
-              value={gstFilter}
-              onChange={(e) => setGstFilter(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900 font-medium"
-            >
-              <option value="all">All</option>
-              <option value="yes">Pays GST</option>
-              <option value="no">No GST</option>
-            </select>
-          </div>
+          
 
           {/* Sort */}
           <div>
@@ -491,7 +473,7 @@ export default function Customers() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">GST</th>
+              
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
@@ -524,15 +506,7 @@ export default function Customers() {
                     </span>
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span
-                    className={`px-2 py-1 text-xs rounded-full ${
-                      customer.pays_gst ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    {customer.pays_gst ? 'Yes' : 'No'}
-                  </span>
-                </td>
+                
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <button
                     onClick={async () => {

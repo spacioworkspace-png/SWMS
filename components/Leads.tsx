@@ -222,16 +222,16 @@ export default function Leads({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50 text-gray-700">
+              <thead className="bg-orange-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Contact</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Source</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Next Follow-up</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase hidden sm:table-cell">Tags</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Created</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Contact</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Source</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Next Follow-up</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase hidden sm:table-cell">Tags</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Created</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -276,7 +276,7 @@ export default function Leads({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {LEAD_STATUSES.map((status) => (
             <div key={status} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-4 py-3 border-b bg-gray-50 text-sm font-bold text-gray-900 capitalize">{status.replace('_',' ')}</div>
+              <div className="px-4 py-3 border-b bg-orange-50 text-sm font-bold text-orange-700 capitalize">{status.replace('_',' ')}</div>
               <div className="p-3 space-y-3 min-h-[200px]">
                 {filteredLeads.filter((l) => l.status === status).map((lead) => (
                   <div key={lead.id} className={`rounded-lg border p-3 ${lead.next_follow_up_date && lead.next_follow_up_date <= todayStr ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}>

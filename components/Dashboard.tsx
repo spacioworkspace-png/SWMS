@@ -29,6 +29,21 @@ export default function Dashboard() {
     activeByCategory: [] as { type: string; count: number }[],
     monthlyPaymentsList: [] as any[],
     monthlyLeadsCount: 0,
+    additionalIncome: 0,
+    unknownPayments: 0,
+    virtualOfficePayments: 0,
+    // New KPIs
+    totalSecurityDeposit: 0,
+    expectedBaseGST: 0,
+    expectedBaseNonGST: 0,
+    expectedGSTTax: 0,
+    expensesBase: 0,
+    expensesGST: 0,
+    expensesTotal: 0,
+    lastMonthBase: 0,
+    lastMonthGST: 0,
+    lastMonthTotal: 0,
+    monthlyExpensesList: [] as any[],
   })
   const [loading, setLoading] = useState(true)
 
@@ -40,6 +55,7 @@ export default function Dashboard() {
     try {
       const now = new Date()
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+      const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().split('T')[0]
 
       // Fetch all data in parallel
       const [
@@ -48,6 +64,7 @@ export default function Dashboard() {
         assignmentsResult,
         paymentsResult,
         monthlyPaymentsResult,
+        expensesThisMonthResult,
         recentPaymentsResult,
         activeAssignmentsWithSpacesResult,
         allAssignmentsResult, // Fetch all assignments to match with payments
@@ -64,15 +81,27 @@ export default function Dashboard() {
             includes_gst, 
             gst_amount,
             destination,
-            assignment_id
+            assignment_id,
+            payment_for_date,
+            payment_date,
+            customer:customers(*),
+            assignment:assignments(*, space:spaces(*))
           `)
-          .gte('payment_date', startOfMonth),
+          .gte('payment_for_date', startOfMonth)
+          .lt('payment_for_date', startOfNextMonth),
+        supabase
+          .from('expenses')
+          .select('amount, includes_gst, gst_amount, date, category, destination, vendor')
+          .gte('date', startOfMonth)
+          .lt('date', startOfNextMonth),
         supabase
           .from('payments')
           .select(`
             *,
             customer:customers(*)
           `)
+          .gte('payment_for_date', startOfMonth)
+          .lt('payment_for_date', startOfNextMonth)
           .order('payment_date', { ascending: false })
           .limit(5),
         supabase
@@ -81,12 +110,14 @@ export default function Dashboard() {
             id,
             monthly_price,
             status,
+            includes_gst,
+            security_deposit,
             space:spaces(id, name, type, price_per_day, is_available)
           `)
           .eq('status', 'active'),
         supabase
           .from('assignments')
-          .select('id, payment_destination, monthly_price, includes_gst'), // Fetch all assignments with payment_destination and pricing
+          .select('id, payment_destination, monthly_price, includes_gst, space:spaces(type)'), // Fetch assignments with destination/pricing and space type for VO mapping
         supabase
           .from('leads')
           .select('id')
@@ -99,16 +130,21 @@ export default function Dashboard() {
       if (paymentsResult.error) throw paymentsResult.error
       if (monthlyPaymentsResult.error) throw monthlyPaymentsResult.error
       if (recentPaymentsResult.error) throw recentPaymentsResult.error
+      if (expensesThisMonthResult.error) throw expensesThisMonthResult.error
       if (activeAssignmentsWithSpacesResult.error) throw activeAssignmentsWithSpacesResult.error
       if (allAssignmentsResult.error) throw allAssignmentsResult.error
       if (leadsThisMonthResult.error) throw leadsThisMonthResult.error
 
-      // Create a map of assignment_id to payment_destination for quick lookup
+      // Create maps for assignment_id -> payment_destination and space type
       const assignmentDestinationMap = new Map<string, string>()
+      const assignmentSpaceTypeMap = new Map<string, string>()
       if (allAssignmentsResult.data) {
         allAssignmentsResult.data.forEach((assignment: any) => {
           if (assignment.payment_destination && assignment.payment_destination.trim() !== '') {
             assignmentDestinationMap.set(assignment.id, assignment.payment_destination.trim())
+          }
+          if (assignment.space?.type) {
+            assignmentSpaceTypeMap.set(assignment.id, assignment.space.type)
           }
         })
       }
@@ -127,10 +163,10 @@ export default function Dashboard() {
 
       const totalCustomers = customersResult.data?.length || 0
       const activeAssignments = assignmentsResult.data?.length || 0
-      const totalPayments = paymentsResult.data?.length || 0
-      
       // Calculate monthly revenue breakdown
       const monthlyPayments = monthlyPaymentsResult.data || []
+      // Count only current-month payments
+      const totalPayments = monthlyPayments.length
       const monthlyRevenue = monthlyPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
       
       // Calculate base revenue (without GST)
@@ -140,12 +176,27 @@ export default function Dashboard() {
         }
         return sum + (p.amount || 0)
       }, 0)
+
+      // Last month comparison (payments only)
+      const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const lastMonthStart = new Date(lastMonthDate.getFullYear(), lastMonthDate.getMonth(), 1).toISOString().split('T')[0]
+      const lastMonthEnd = new Date(lastMonthDate.getFullYear(), lastMonthDate.getMonth() + 1, 1).toISOString().split('T')[0]
+      const lastMonthPayments = (paymentsResult.data || []).filter((p: any) => (p.payment_for_date || '').split('T')[0] >= lastMonthStart && (p.payment_for_date || '') < lastMonthEnd)
+      const lastMonthBase = lastMonthPayments.reduce((s: number, p: any) => s + ((p.includes_gst ? (p.amount - (p.gst_amount || 0)) : p.amount) || 0), 0)
+      const lastMonthGST = lastMonthPayments.reduce((s: number, p: any) => s + (p.gst_amount || 0), 0)
+      const lastMonthTotal = lastMonthBase + lastMonthGST
       
       // Calculate GST
       const monthlyGST = monthlyPayments.reduce((sum, p) => sum + (p.gst_amount || 0), 0)
       
       // Calculate revenue with GST (total including GST)
       const monthlyRevenueWithGST = monthlyBaseRevenue + monthlyGST
+
+      // Expenses (this month)
+      const expensesList = expensesThisMonthResult.data || []
+      const expensesTotal = expensesList.reduce((s: number, e: any) => s + (e.amount || 0), 0)
+      const expensesGST = expensesList.reduce((s: number, e: any) => s + (e.includes_gst ? (e.gst_amount || 0) : 0), 0)
+      const expensesBase = expensesTotal - expensesGST
 
       // Calculate base amounts by GST status
       const baseNoGST = monthlyPayments.reduce((sum, p) => {
@@ -166,7 +217,8 @@ export default function Dashboard() {
       const monthlyLeadsCount = leadsThisMonthResult.data?.length || 0
 
       // Calculate monthly base revenue from all active assignments (exclude Virtual Office)
-      const monthlyBaseFromAssignments = (activeAssignmentsWithSpacesResult.data || [])
+      const activeAssigns = (activeAssignmentsWithSpacesResult.data || [])
+      const monthlyBaseFromAssignments = activeAssigns
         .filter((assignment: any) => assignment.space?.type !== 'Virtual Office')
         .reduce((sum, assignment: any) => {
         // Get monthly price from assignment or space, handling null/undefined/NaN
@@ -193,32 +245,57 @@ export default function Dashboard() {
         return sum + validPrice
       }, 0)
 
+      // Expected base split by GST (active assignments, excluding VO)
+      const expectedBaseGST = activeAssigns
+        .filter((a: any) => a.space?.type !== 'Virtual Office' && a.includes_gst)
+        .reduce((sum: number, a: any) => sum + (Number(a.monthly_price || a.space?.price_per_day || 0) || 0), 0)
+      const expectedBaseNonGST = activeAssigns
+        .filter((a: any) => a.space?.type !== 'Virtual Office' && !a.includes_gst)
+        .reduce((sum: number, a: any) => sum + (Number(a.monthly_price || a.space?.price_per_day || 0) || 0), 0)
+      const expectedGSTTax = expectedBaseGST * 0.18
+
+      // Total current security deposit (active assignments)
+      const totalSecurityDeposit = activeAssigns.reduce((sum: number, a: any) => sum + (Number(a.security_deposit) || 0), 0)
+
+      // Helper: resolve destination from payment or assignment
+      const resolveDestination = (payment: any) => {
+        let destination = payment.destination
+        if (destination && typeof destination === 'string') {
+          destination = destination.trim()
+          if (destination === '') destination = null
+        } else {
+          destination = null
+        }
+        if (!destination && payment.assignment_id) {
+          const assignmentDest = assignmentDestinationMap.get(payment.assignment_id)
+          if (assignmentDest && assignmentDest !== '') destination = assignmentDest
+        }
+        return destination
+      }
+
+      // Compute additional metrics
+      const additionalIncome = monthlyPayments.reduce((sum: number, p: any) => (
+        !p.assignment_id ? sum + (p.amount || 0) : sum
+      ), 0)
+
+      const unknownPayments = monthlyPayments.reduce((sum: number, p: any) => {
+        const dest = resolveDestination(p)
+        return (!dest ? sum + (p.amount || 0) : sum)
+      }, 0)
+
+      const virtualOfficePayments = monthlyPayments.reduce((sum: number, p: any) => {
+        const aid = p.assignment_id
+        if (!aid) return sum
+        const st = assignmentSpaceTypeMap.get(aid)
+        if (st === 'Virtual Office') return sum + (p.amount || 0)
+        return sum
+      }, 0)
+
       // Group payments by destination
       const destinationMap = new Map<string, { amount: number; count: number }>()
       
       monthlyPayments.forEach((payment: any) => {
-        // Get destination from payment first
-        let destination = payment.destination
-        
-        // Clean up destination (remove whitespace, handle null/undefined)
-        if (destination && typeof destination === 'string') {
-          destination = destination.trim()
-          if (destination === '') {
-            destination = null
-          }
-        } else {
-          destination = null
-        }
-        
-        // If payment doesn't have destination or it's empty, try to get it from assignment
-        if (!destination && payment.assignment_id) {
-          // Look up assignment destination from our map
-          const assignmentDest = assignmentDestinationMap.get(payment.assignment_id)
-          if (assignmentDest && assignmentDest !== '') {
-            destination = assignmentDest
-          }
-        }
-        
+        let destination = resolveDestination(payment)
         // If still no destination, use 'Not Specified'
         if (!destination || destination === '') {
           destination = 'Not Specified'
@@ -273,7 +350,23 @@ export default function Dashboard() {
         monthlyBaseFromAssignments,
         activeByCategory,
         monthlyPaymentsList: monthlyPayments,
+        // New metrics
+        additionalIncome,
+        unknownPayments,
+        virtualOfficePayments,
         monthlyLeadsCount,
+        // New
+        totalSecurityDeposit,
+        expectedBaseGST,
+        expectedBaseNonGST,
+        expectedGSTTax,
+        expensesBase,
+        expensesGST,
+        expensesTotal,
+        lastMonthBase,
+        lastMonthGST,
+        lastMonthTotal,
+        monthlyExpensesList: expensesList,
       })
     } catch (error: any) {
       alert('Error fetching dashboard data: ' + error.message)
@@ -310,7 +403,10 @@ export default function Dashboard() {
       `Base Revenue (No GST): ${formatCurrency(stats.monthlyBaseRevenue)}`,
       `GST Collected: ${formatCurrency(stats.monthlyGST)}`,
       `Total Revenue (Incl. GST): ${formatCurrency(stats.monthlyRevenue)}`,
-      `Expected Monthly Base from Assignments: ${formatCurrency(stats.monthlyBaseFromAssignments)}`,
+      `Expenses — Base: ${formatCurrency(stats.expensesBase)} | GST: ${formatCurrency(stats.expensesGST)} | Total: ${formatCurrency(stats.expensesTotal)}`,
+      `Expected Monthly Base — GST: ${formatCurrency(stats.expectedBaseGST)} | Non-GST: ${formatCurrency(stats.expectedBaseNonGST)} | Expected GST (18%): ${formatCurrency(stats.expectedGSTTax)}`,
+      `Security Deposit (Active): ${formatCurrency(stats.totalSecurityDeposit)}`,
+      `Last Month — Base: ${formatCurrency(stats.lastMonthBase)} | GST: ${formatCurrency(stats.lastMonthGST)} | Total: ${formatCurrency(stats.lastMonthTotal)}`,
     ]
     lines.forEach((t, i) => doc.text(t, 14, summaryY + 8 + i * 6))
 
@@ -333,7 +429,7 @@ export default function Dashboard() {
       headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
     })
 
-    // Category table
+    // Category table (Active assignments by space type)
     const afterPaymentsY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : paymentsTableStart
     const categoryBody = (stats.activeByCategory || []).map((c) => [c.type, c.count.toString()])
     autoTable(doc, {
@@ -344,7 +440,7 @@ export default function Dashboard() {
       styles: { fontSize: 9 },
     })
 
-    // Destination table
+    // Destination table (Payments by destination)
     const afterCatY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : afterPaymentsY
     const destBody = (stats.paymentByDestination || []).map((d) => [d.destination, formatCurrency(d.amount), d.count.toString()])
     autoTable(doc, {
@@ -354,6 +450,41 @@ export default function Dashboard() {
       theme: 'grid',
       styles: { fontSize: 9 },
       columnStyles: { 0: { cellWidth: 70 } },
+    })
+
+    // Expenses table (This month)
+    const afterDestY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : afterCatY
+    const expensesBody = (stats.monthlyExpensesList || []).map((e: any) => [
+      e.date,
+      e.category || '-',
+      e.destination || '-',
+      e.vendor || '-',
+      formatCurrency((e.amount || 0) - (e.gst_amount || 0)),
+      e.includes_gst ? formatCurrency(e.gst_amount || 0) : '-',
+      formatCurrency(e.amount || 0),
+    ])
+    autoTable(doc, {
+      startY: afterDestY,
+      head: [['Date', 'Category', 'Destination', 'Vendor', 'Base', 'GST', 'Total']],
+      body: expensesBody,
+      theme: 'striped',
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [244, 127, 37], textColor: [255, 255, 255] },
+    })
+
+    // GST Reconciliation
+    const afterExpensesY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : afterDestY
+    autoTable(doc, {
+      startY: afterExpensesY,
+      head: [['GST Reconciliation', 'Amount']],
+      body: [
+        ['GST Collected (Payments)', formatCurrency(stats.monthlyGST)],
+        ['GST Paid (Expenses)', formatCurrency(stats.expensesGST)],
+        ['Net GST Payable', formatCurrency((stats.monthlyGST || 0) - (stats.expensesGST || 0))],
+      ],
+      theme: 'grid',
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255] },
     })
 
     // Footer
@@ -482,6 +613,48 @@ export default function Dashboard() {
           <Link href="/assignments" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
             View assignments →
           </Link>
+        </div>
+
+        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+          <h3 className="text-sm font-medium mb-2 opacity-90">Additional Income</h3>
+          <p className="text-3xl font-bold">{formatCurrency(stats.additionalIncome)}</p>
+          <p className="text-sm mt-2 opacity-75">Manual entries (no assignment)</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+          <h3 className="text-sm font-medium mb-2 opacity-90">Virtual Office Payments and Day pass</h3>
+          <p className="text-3xl font-bold">{formatCurrency(stats.virtualOfficePayments)}</p>
+          <p className="text-sm mt-2 opacity-75">Payments tied to VO assignments</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+          <h3 className="text-sm font-medium mb-2 opacity-90">Total Security Deposit</h3>
+          <p className="text-3xl font-bold">{formatCurrency(stats.totalSecurityDeposit)}</p>
+          <p className="text-sm mt-2 opacity-75">Across active assignments</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-sky-500 to-sky-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+          <h3 className="text-sm font-medium mb-2 opacity-90">Expected Base (GST)</h3>
+          <p className="text-3xl font-bold">{formatCurrency(stats.expectedBaseGST)}</p>
+          <p className="text-sm mt-2 opacity-75">Active assignments (excl. VO)</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-sky-500 to-sky-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+          <h3 className="text-sm font-medium mb-2 opacity-90">Expected Base (Non-GST)</h3>
+          <p className="text-3xl font-bold">{formatCurrency(stats.expectedBaseNonGST)}</p>
+          <p className="text-sm mt-2 opacity-75">Active assignments (excl. VO)</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-lime-500 to-lime-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+          <h3 className="text-sm font-medium mb-2 opacity-90">Expected GST Tax (18%)</h3>
+          <p className="text-3xl font-bold">{formatCurrency(stats.expectedGSTTax)}</p>
+          <p className="text-sm mt-2 opacity-75">On expected GST base</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
+          <h3 className="text-sm font-medium mb-2 opacity-90">Expenses (This Month)</h3>
+          <p className="text-3xl font-bold">{formatCurrency(stats.expensesTotal)}</p>
+          <p className="text-sm mt-2 opacity-75">Base {formatCurrency(stats.expensesBase)} • GST {formatCurrency(stats.expensesGST)}</p>
         </div>
       </div>
 

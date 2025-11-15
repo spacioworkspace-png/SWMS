@@ -6,6 +6,7 @@ import { Assignment, Customer, Space } from '@/types'
 import { getBillingCycle, formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from './AuthProvider'
 import { canEdit, canDelete } from '@/lib/auth'
+import { exportToCSV } from '@/lib/export'
 
 export default function Assignments() {
   const { user } = useAuth()
@@ -425,6 +426,52 @@ export default function Assignments() {
     return <div className="p-8 text-center animate-pulse">Loading...</div>
   }
 
+  const onExportCSV = () => {
+    const rows = filteredAssignments.map((a) => {
+      const customer = a.customer as Customer
+      const space = a.space as Space
+      const customerName = customer?.first_name && customer?.last_name
+        ? `${customer.first_name} ${customer.last_name}`
+        : customer?.name || '-'
+      const monthly = a.monthly_price || 0
+      const gstAmt = (a as any).includes_gst ? monthly * 0.18 : 0
+      const total = monthly + gstAmt
+      const renewalDate = (a as any).renewal_date || (a.start_date ? (() => { const d = new Date(a.start_date); d.setMonth(d.getMonth() + 11); return d.toISOString().split('T')[0] })() : '')
+      return {
+        Customer: customerName,
+        Space: space?.name || '-',
+        SpaceType: space?.type || '-',
+        StartDate: a.start_date || '',
+        RenewalDate: renewalDate || '',
+        EndDate: a.end_date || '',
+        MonthlyPrice: monthly.toFixed(2),
+        IncludesGST: (a as any).includes_gst ? 'Yes' : 'No',
+        GSTAmount: gstAmt.toFixed(2),
+        TotalWithGST: total.toFixed(2),
+        SecurityDeposit: (a.security_deposit || 0).toFixed(2),
+        PaymentDestination: (a as any).payment_destination || '-',
+        RentStatusThisMonth: (a as any).rentStatus || (a.status === 'active' ? 'pending' : 'na'),
+        Status: a.status,
+      }
+    })
+    exportToCSV(rows, [
+      { key: 'Customer', header: 'Customer' },
+      { key: 'Space', header: 'Space' },
+      { key: 'SpaceType', header: 'Space Type' },
+      { key: 'StartDate', header: 'Start Date' },
+      { key: 'RenewalDate', header: 'Renewal Date' },
+      { key: 'EndDate', header: 'End Date' },
+      { key: 'MonthlyPrice', header: 'Monthly Price' },
+      { key: 'IncludesGST', header: 'Includes GST' },
+      { key: 'GSTAmount', header: 'GST Amount' },
+      { key: 'TotalWithGST', header: 'Total (With GST)' },
+      { key: 'SecurityDeposit', header: 'Security Deposit' },
+      { key: 'PaymentDestination', header: 'Payment Destination' },
+      { key: 'RentStatusThisMonth', header: 'Rent Status (This Month)' },
+      { key: 'Status', header: 'Status' },
+    ], 'assignments-export')
+  }
+
   return (
     <div className="p-8 animate-fade-in">
       <div className="flex justify-between items-center mb-6">
@@ -434,21 +481,24 @@ export default function Assignments() {
           </h2>
           <p className="text-sm text-gray-500 mt-1">Manage space assignments and renewals</p>
         </div>
-        {canEdit(user) && (
-          <button
-            onClick={() => {
-              setEditingAssignment(null)
-            resetForm()
-            setShowModal(true)
-          }}
-          className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-2 rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center"
-        >
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-            Add Assignment
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <button onClick={onExportCSV} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">Export CSV</button>
+          {canEdit(user) && (
+            <button
+              onClick={() => {
+                setEditingAssignment(null)
+                resetForm()
+                setShowModal(true)
+              }}
+              className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-2 rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Assignment
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Search, Filter, and Sort Controls */}
@@ -525,22 +575,22 @@ export default function Assignments() {
 
       <div className="overflow-x-auto shadow-lg rounded-lg">
         <table className="min-w-full bg-white border border-gray-200">
-          <thead className="bg-gray-50">
+          <thead className="bg-orange-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Space</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Billing</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Renewal Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">End Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monthly Price</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">GST</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Security Deposit</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment Destination</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rent Status (This Month)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Customer</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Space</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Billing</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Start Date</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Renewal Date</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">End Date</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Monthly Price</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">GST</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Total</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Security Deposit</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Payment Destination</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Rent Status (This Month)</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">

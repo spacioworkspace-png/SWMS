@@ -51,12 +51,29 @@ export interface Assignment {
   notes: string | null;
   security_deposit: number;
   monthly_price: number | null;
+  includes_gst?: boolean;
+  payment_destination?: string | null;
   agreement_pdf_url: string | null;
   agreement_expiry_date: string | null;
   created_at: string;
   updated_at: string;
   customer?: Customer;
   space?: Space;
+}
+
+export interface Expense {
+  id: string;
+  date: string;
+  amount: number;
+  category: string | null;
+  destination: string | null;
+  includes_gst: boolean;
+  gst_amount: number | null;
+  vendor: string | null;
+  notes: string | null;
+  attachment_url: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Payment {

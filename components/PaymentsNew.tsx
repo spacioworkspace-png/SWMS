@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Payment, Customer, Assignment, Space } from '@/types'
 import { formatCurrency, formatDate, getBillingCycle } from '@/lib/utils'
@@ -8,9 +9,24 @@ import { useAuth } from '@/components/AuthProvider'
 import { canEdit, canDelete } from '@/lib/auth'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import DataTable, { DataTableColumn } from '@/components/DataTable'
 
-export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
+export default function PaymentsNew(
+  {
+    mode,
+    initialManualType,
+    initialDate,
+    onSaved,
+  }: {
+    mode?: 'full' | 'formOnly'
+    initialManualType?: 'daypass' | 'meeting'
+    initialDate?: string
+    onSaved?: () => void
+  } = {}
+) {
   const { user } = useAuth()
+  const searchParams = useSearchParams()
+  const [prefillAssignmentId, setPrefillAssignmentId] = useState<string | null>(null)
   const [payments, setPayments] = useState<Payment[]>([])
   const [filteredPayments, setFilteredPayments] = useState<Payment[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -33,12 +49,75 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
     todayRevenue: 0,
     thisWeekRevenue: 0,
   })
+
+  const destinationOptions = [
+    'APPA 316',
+    'APPA CANARA',
+    'DADDY FEDERAL',
+    'SHAN SAVINGS',
+    'SPACIO CURRENT',
+    'Cash',
+  ]
+
+  // Columns for DataTable in All Payments tab
+  const paymentColumns: DataTableColumn<Payment>[] = useMemo(() => ([
+    {
+      key: 'customer', header: 'Customer', sortable: true, filterable: true, type: 'text',
+      value: (p) => {
+        const c = p.customer as Customer | undefined
+        return p.assignment_id ? (c?.first_name && c?.last_name ? `${c.first_name} ${c.last_name}` : (c?.name || '')) : 'Day Pass'
+      },
+      accessor: (p) => {
+        const c = p.customer as Customer | undefined
+        return p.assignment_id ? (<span className="font-semibold text-gray-900">{c?.first_name && c?.last_name ? `${c.first_name} ${c.last_name}` : (c?.name || '')}</span>) : (<span className="text-gray-500">Day Pass</span>)
+      },
+    },
+    {
+      key: 'space', header: 'Assigned Space', sortable: true, filterable: true, type: 'text',
+      value: (p) => {
+        const asg = p.assignment as Assignment | undefined
+        const sp = asg?.space as Space | undefined
+        return sp?.name || ''
+      },
+      accessor: (p) => {
+        const asg = p.assignment as Assignment | undefined
+        const sp = asg?.space as Space | undefined
+        return sp ? (<div><span className="font-semibold text-orange-700">{sp.name}</span><span className="text-gray-500 ml-2">({sp.type})</span></div>) : (<span className="text-gray-400">-</span>)
+      },
+    },
+    {
+      key: 'base', header: 'Base Amount', sortable: true, filterable: true, type: 'number', align: 'right',
+      value: (p) => (p.amount - (p.gst_amount || 0)),
+      accessor: (p) => <span className="font-semibold text-gray-900">{formatCurrency(p.amount - (p.gst_amount || 0))}</span>,
+    },
+    {
+      key: 'gst', header: 'GST (18%)', sortable: true, filterable: true, type: 'number', align: 'right',
+      value: (p) => (p.includes_gst ? (p.gst_amount || 0) : 0),
+      accessor: (p) => p.includes_gst ? (<span className="text-green-700 font-semibold">{formatCurrency(p.gst_amount || 0)}</span>) : (<span className="text-gray-400">-</span>),
+    },
+    {
+      key: 'amount', header: 'Total Amount', sortable: true, filterable: true, type: 'number', align: 'right',
+      accessor: (p) => <span className="font-bold text-orange-700">{formatCurrency(p.amount)}</span>,
+    },
+    {
+      key: 'payment_date', header: 'Payment Date', sortable: true, filterable: true, type: 'date',
+      accessor: (p) => <span className="text-gray-600">{formatDate(p.payment_date)}</span>,
+    },
+    {
+      key: 'payment_for_date', header: 'Payment For', sortable: true, filterable: true, type: 'date',
+      accessor: (p) => p.payment_for_date || '-',
+    },
+    {
+      key: 'destination', header: 'Destination', sortable: true, filterable: true, type: 'select', options: destinationOptions,
+      accessor: (p) => <span className="text-gray-600 font-medium">{p.destination || '-'}</span>,
+    },
+  ]), [destinationOptions])
   const [monthlyBreakdown, setMonthlyBreakdown] = useState<Record<string, { count: number; base: number; gst: number; total: number }>>({})
   const [activeTab, setActiveTab] = useState<'dashboard' | 'list' | 'pending' | 'reports'>('dashboard')
   const [reportsSort, setReportsSort] = useState<'desc' | 'asc'>('desc')
   const [reportsRowSort, setReportsRowSort] = useState<'space_asc' | 'space_desc' | 'date_asc' | 'date_desc'>('date_asc')
   const [isLateMonth, setIsLateMonth] = useState<boolean>(false)
-  const [groupPendingByMonth, setGroupPendingByMonth] = useState<boolean>(false)
+  const [groupPendingBy, setGroupPendingBy] = useState<'none' | 'month' | 'customer'>('customer')
   const [formData, setFormData] = useState({
     assignment_id: '',
     amount: '',
@@ -54,18 +133,57 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
     rent_for_dates: '',
   })
 
-  const destinationOptions = [
-    'APPA 316',
-    'APPA CANARA',
-    'DADDY FEDERAL',
-    'SHAN SAVINGS',
-    'SPACIO CURRENT',
-    'Cash',
-  ]
-
   useEffect(() => {
     fetchData()
   }, [])
+
+  // Allow opening modal prefilled for manual entries via URL params or props
+  useEffect(() => {
+    const assignmentId = searchParams?.get('assignment_id') || ''
+    if (assignmentId) {
+      const today = new Date().toISOString().split('T')[0]
+      const currentMonth = new Date().toISOString().slice(0, 7)
+      setShowModal(true)
+      setEditingPayment(null)
+      setPrefillAssignmentId(assignmentId)
+      setFormData((prev) => ({
+        ...prev,
+        is_manual_entry: false,
+        assignment_id: assignmentId,
+        payment_date: today,
+        payment_for_month: currentMonth,
+      }))
+    } else if (searchParams?.get('manual') === '1' || initialManualType) {
+      const typeParam = (searchParams?.get('type') || '').toLowerCase()
+      const type = (initialManualType || (typeParam === 'meeting' ? 'meeting' : 'daypass'))
+      const today = (initialDate && initialDate.length >= 10) ? initialDate : new Date().toISOString().split('T')[0]
+      const currentMonth = today.slice(0, 7)
+      setShowModal(true)
+      setEditingPayment(null)
+      setFormData((prev) => ({
+        ...prev,
+        is_manual_entry: true,
+        manual_space_type: type === 'meeting' ? 'Meeting Room' : 'Day Pass',
+        payment_date: today,
+        payment_for_month: currentMonth,
+        rent_for_dates: today,
+      }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, initialManualType, initialDate])
+
+  // When assignments load, if we have a prefill assignment, prefill amount if empty
+  useEffect(() => {
+    if (prefillAssignmentId && assignments && assignments.length) {
+      const asg = assignments.find((a) => (a as any).id === prefillAssignmentId)
+      if (asg) {
+        setFormData((prev) => ({
+          ...prev,
+          amount: prev.amount || ((asg as any).monthly_price ? String((asg as any).monthly_price) : ''),
+        }))
+      }
+    }
+  }, [prefillAssignmentId, assignments])
 
   // Compute filtered/sorted payments
   useEffect(() => {
@@ -154,6 +272,7 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
     try {
       const now = new Date()
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+      const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().split('T')[0]
       const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay())).toISOString().split('T')[0]
       const today = new Date().toISOString().split('T')[0]
 
@@ -187,8 +306,15 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
       setAssignments(assignmentsResult.data || [])
       setSpaces(spacesResult.data || [])
       setFilteredPayments(paymentsData || [])
+      // Default filter for list: current month only
+      setDateFrom(startOfMonth)
+      setDateTo(today)
 
-      const monthlyPayments = paymentsData?.filter((p) => p.payment_date >= startOfMonth) || []
+      // Strict current-month filter for dashboard breakdowns: use payment_for_date month window
+      const monthlyPayments = (paymentsData || []).filter((p) => {
+        const forDate = (p.payment_for_date || '')
+        return forDate >= startOfMonth && forDate < startOfNextMonth
+      })
       const weeklyPayments = paymentsData?.filter((p) => p.payment_date >= startOfWeek) || []
       const todayPayments = paymentsData?.filter((p) => p.payment_date === today) || []
 
@@ -286,9 +412,8 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
         basePrice = space?.price_per_day || 0
       }
 
-      const customer = customers.find((c) => c.id === assignment.customer_id)
-      const customerPaysGST = customer?.pays_gst || false
-      const gstAmount = customerPaysGST ? calculateGST(basePrice, true) : 0
+      const assignmentIncludesGST = (assignment as any).includes_gst || false
+      const gstAmount = assignmentIncludesGST ? calculateGST(basePrice, true) : 0
 
       const paymentDestination = (assignment as any).payment_destination || ''
       const today = new Date().toISOString().split('T')[0]
@@ -299,7 +424,7 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
         assignment_id: assignmentId,
         // For Virtual Office, keep amount unchanged (no auto-fill)
         amount: space?.type === 'Virtual Office' ? prev.amount : (basePrice > 0 ? basePrice.toString() : ''),
-        includes_gst: customerPaysGST,
+        includes_gst: assignmentIncludesGST,
         gst_amount: gstAmount.toFixed(2),
         destination: paymentDestination,
         payment_date: prev.payment_date || today,
@@ -343,6 +468,28 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
     }
     return { thisM: sum(thisMonthPayments), lastM: sum(lastMonthPayments) }
   }, [payments, currentMonthKey, lastMonthKey])
+  // Last 3 months total base (amount minus GST)
+  const last3Base = useMemo(() => {
+    const keys: string[] = (() => {
+      const now = new Date()
+      const arr: string[] = []
+      for (let i = 2; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        arr.push(d.toISOString().slice(0, 7))
+      }
+      return arr
+    })()
+    const items = keys.map((k) => {
+      const list = payments.filter((p) => {
+        const mk = (p.payment_for_date ? p.payment_for_date.slice(0, 7) : (p.payment_date || '').slice(0, 7))
+        return mk === k
+      })
+      const base = list.reduce((sum, p) => sum + (p.amount - (p.gst_amount || 0)), 0)
+      return { key: k, base }
+    })
+    const max = Math.max(1, ...items.map((it) => it.base))
+    return { items, max }
+  }, [payments])
   const [rowCollectMonth, setRowCollectMonth] = useState<Record<string, string>>({})
 
   // Utility: month iteration between two YYYY-MM inclusive
@@ -367,7 +514,14 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
       const sp = (a.space as Space) || spaces.find((s) => s.id === a.space_id)
       if (sp?.type === 'Virtual Office') continue
       const startKey = (a.start_date || '').slice(0,7) || currentMonthKey
-      const months = monthRange(startKey, currentMonthKey)
+      const endCapKey = (() => {
+        const ek = (a.end_date || '').slice(0,7)
+        if (!ek) return currentMonthKey
+        // use the earlier of end month and current month
+        return ek < currentMonthKey ? ek : currentMonthKey
+      })()
+      if (startKey > endCapKey) { map[a.id] = []; continue }
+      const months = monthRange(startKey, endCapKey)
       const pend = months.filter((mk) => {
         const hasPayment = payments.some((p) => p.assignment_id === a.id && (((p.payment_for_date || '').slice(0,7) === mk) || ((p.payment_date || '').slice(0,7) === mk)))
         return !hasPayment
@@ -376,6 +530,8 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
     }
     return map
   })()
+
+  
 
   // Flatten pending months into rows for display
   const pendingRows: Array<{ a: Assignment; monthKey: string }> = (() => {
@@ -409,9 +565,28 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
       map[key].rows.push(pr)
       const a = pr.a
       const sp = (a.space as Space) || spaces.find((s) => s.id === a.space_id)
-      const c = customers.find((cc) => cc.id === a.customer_id)
       const base = (a.monthly_price || sp?.price_per_day || 0)
-      const gst = c?.pays_gst ? base * 0.18 : 0
+      const gst = (a as any).includes_gst ? base * 0.18 : 0
+      map[key].totals.base += base
+      map[key].totals.gst += gst
+      map[key].totals.total += base + gst
+    }
+    return map
+  })()
+
+  // Group pending rows by customer with estimated totals (base/gst/total)
+  const pendingCustomerGroups: Record<string, { customerName: string; rows: Array<{ a: Assignment; monthKey: string }>; totals: { base: number; gst: number; total: number } }> = (() => {
+    const map: Record<string, { customerName: string; rows: Array<{ a: Assignment; monthKey: string }>; totals: { base: number; gst: number; total: number } }> = {}
+    for (const pr of pendingRows) {
+      const a = pr.a
+      const cust = customers.find((cc) => cc.id === a.customer_id)
+      const key = a.customer_id
+      const name = cust?.first_name && cust?.last_name ? `${cust.first_name} ${cust.last_name}` : cust?.name || '-'
+      if (!map[key]) map[key] = { customerName: name, rows: [], totals: { base: 0, gst: 0, total: 0 } }
+      map[key].rows.push(pr)
+      const sp = (a.space as Space) || spaces.find((s) => s.id === a.space_id)
+      const base = (a.monthly_price || sp?.price_per_day || 0)
+      const gst = (a as any).includes_gst ? base * 0.18 : 0
       map[key].totals.base += base
       map[key].totals.gst += gst
       map[key].totals.total += base + gst
@@ -425,6 +600,11 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
     .filter((a) => {
       const sp = (a.space as Space) || spaces.find((s) => s.id === a.space_id)
       if (sp?.type === 'Virtual Office') return false
+      // Only consider pending for months within assignment range
+      const startKey = (a.start_date || '').slice(0,7) || pendingMonth
+      const endKey = (a.end_date || '').slice(0,7) || ''
+      if (pendingMonth < startKey) return false
+      if (endKey && pendingMonth > endKey) return false
       const hasPaymentThisMonth = payments.some((p) => {
         if (p.assignment_id !== a.id) return false
         const forMonth = (p.payment_for_date || '').slice(0, 7)
@@ -468,6 +648,63 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
       default:
         return a.payment_date.localeCompare(b.payment_date)
     }
+  }
+
+  // Export a given month's payments to CSV (Reports tab)
+  const exportMonthCSV = (monthKey: string, list: Payment[]) => {
+    const header = [
+      'Month',
+      'Customer',
+      'Space',
+      'Base',
+      'GST',
+      'Total',
+      'Payment Date',
+      'Payment For',
+      'Destination',
+      'Reference',
+      'Notes',
+    ]
+    const rows = list.map((p) => {
+      const customer = p.customer as Customer | undefined
+      const assignment = p.assignment as Assignment | undefined
+      const space = assignment?.space as Space | undefined
+      const base = (p.amount - (p.gst_amount || 0))
+      const customerName = customer?.first_name && customer?.last_name
+        ? `${customer.first_name} ${customer.last_name}`
+        : (customer?.name || '')
+      return [
+        monthKey,
+        customerName,
+        space?.name || '',
+        base.toFixed(2),
+        (p.includes_gst ? (p.gst_amount || 0) : 0).toFixed(2),
+        p.amount.toFixed(2),
+        p.payment_date,
+        p.payment_for_date || '',
+        p.destination || '',
+        p.reference_number || '',
+        (p.notes || '').replace(/\n/g, ' '),
+      ]
+    })
+    const csv = [header, ...rows]
+      .map((r) => r.map((v) => {
+        const s = String(v ?? '')
+        if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+          return '"' + s.replace(/"/g, '""') + '"'
+        }
+        return s
+      }).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `payments-${monthKey}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   // Only show assignments that already have a payment recorded for the selected month, ordered by space name
@@ -603,6 +840,12 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
       setEditingPayment(null)
       resetForm()
       fetchData()
+      const redirect = searchParams?.get('redirect')
+      if (redirect === 'collect') {
+        window.location.href = '/collect'
+        return
+      }
+      if (onSaved) onSaved()
     } catch (error: any) {
       alert('Error saving payment: ' + error.message)
     }
@@ -827,6 +1070,24 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
               </div>
             </div>
           </div>
+          {/* Last 3 months base graph */}
+          <div className="mt-6 bg-white rounded-xl border border-orange-100 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-md font-bold text-gray-900">Total Base (Last 3 Months)</h4>
+                <p className="text-sm text-gray-500">Base = Amount - GST</p>
+              </div>
+            </div>
+            <div className="mt-4 h-48 flex items-end gap-6 px-6">
+              {last3Base.items.map((it) => (
+                <div key={it.key} className="flex-1 flex flex-col items-center">
+                  <div className="w-10 bg-orange-500 rounded-t" style={{ height: `${Math.max(8, Math.round((it.base / last3Base.max) * 160))}px` }}></div>
+                  <div className="mt-2 text-xs text-gray-700">{it.key}</div>
+                  <div className="text-sm font-semibold text-gray-900">{formatCurrency(it.base)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="mt-6 bg-white rounded-xl border border-orange-100 p-4">
             <h4 className="text-md font-bold text-gray-900 mb-3">Breakdown by Space Type (This Month)</h4>
             {Object.entries(monthlyBreakdown).length === 0 ? (
@@ -834,13 +1095,13 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-orange-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Space Type</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Payments</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Base</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">GST</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Total</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Space Type</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Payments</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Base</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">GST</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Total</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -867,25 +1128,29 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
                 <h3 className="text-lg font-bold text-gray-900">Pending Payments (All Months)</h3>
                 <p className="text-sm text-gray-500 mt-1">One row per pending month per assignment since start date</p>
               </div>
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <input type="checkbox" checked={groupPendingByMonth} onChange={(e)=>setGroupPendingByMonth(e.target.checked)} className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500 cursor-pointer" />
-                Group by Month
-              </label>
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <label htmlFor="groupPending" className="sr-only">Group by</label>
+                <select id="groupPending" value={groupPendingBy} onChange={(e)=>setGroupPendingBy(e.target.value as any)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900">
+                  <option value="none">No Grouping</option>
+                  <option value="month">Group by Month</option>
+                  <option value="customer">Group by Customer</option>
+                </select>
+              </div>
             </div>
           </div>
           <div className="p-6">
             {pendingRows.length === 0 ? (
               <div className="text-sm text-gray-500">No pending payments for this month 🎉</div>
-            ) : !groupPendingByMonth ? (
+            ) : groupPendingBy === 'none' ? (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-orange-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Customer</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Space</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Month</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Monthly Price</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Action</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Customer</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Space</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Month</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Monthly Price</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Action</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -908,7 +1173,7 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
                   </tbody>
                 </table>
               </div>
-            ) : (
+            ) : groupPendingBy === 'month' ? (
               <div className="space-y-6">
                 {Object.keys(pendingGroups).sort().map((mk) => {
                   const sect = pendingGroups[mk]
@@ -920,14 +1185,14 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
                       </div>
                       <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-gray-50">
+                          <thead className="bg-orange-50">
                             <tr>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Customer</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Space</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Est. Base</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Est. GST</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Est. Total</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Action</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Customer</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Space</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Est. Base</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Est. GST</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Est. Total</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Action</th>
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
@@ -935,7 +1200,7 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
                               const c = customers.find((cc) => cc.id === a.customer_id)
                               const s = ((a.space as Space) || spaces.find((sp) => sp.id === a.space_id))
                               const base = (a.monthly_price || s?.price_per_day || 0)
-                              const gst = c?.pays_gst ? base * 0.18 : 0
+                              const gst = (a as any).includes_gst ? base * 0.18 : 0
                               const total = base + gst
                               const name = c?.first_name && c?.last_name ? `${c.first_name} ${c.last_name}` : c?.name || '-'
                               return (
@@ -958,126 +1223,77 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
                   )
                 })}
               </div>
+            ) : (
+              <div className="space-y-6">
+                {(Object.entries(pendingCustomerGroups) as Array<[string, { customerName: string; rows: Array<{ a: Assignment; monthKey: string }>; totals: { base: number; gst: number; total: number } }]> )
+                  .sort((a,b) => a[1].customerName.localeCompare(b[1].customerName))
+                  .map(([cid, sect]) => (
+                  <div key={cid} className="border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
+                      <div className="font-bold">{sect.customerName}</div>
+                      <div className="text-sm opacity-90">{sect.rows.length} pending • Base {formatCurrency(sect.totals.base)} • GST {formatCurrency(sect.totals.gst)} • Total {formatCurrency(sect.totals.total)}</div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-orange-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Month</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Space</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Est. Base</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Est. GST</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Est. Total</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {sect.rows.map(({ a, monthKey }: { a: Assignment; monthKey: string }) => {
+                            const c = customers.find((cc) => cc.id === a.customer_id)
+                            const s = ((a.space as Space) || spaces.find((sp) => sp.id === a.space_id))
+                            const base = (a.monthly_price || s?.price_per_day || 0)
+                            const gst = (a as any).includes_gst ? base * 0.18 : 0
+                            const total = base + gst
+                            return (
+                              <tr key={`${a.id}-${monthKey}`} className="hover:bg-orange-50">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{monthKey}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{s?.name} <span className="text-gray-400">({s?.type})</span></td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(base)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-700 font-semibold">{gst ? formatCurrency(gst) : '-'}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-700">{formatCurrency(total)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                  <button onClick={() => startCollect(a, monthKey)} className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold">Collect</button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
       ) : activeTab === 'list' ? (
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-orange-100">
-        <div className="px-6 py-4 border-b border-orange-100 bg-gradient-to-r from-orange-50 to-white">
-          <h3 className="text-lg font-bold text-gray-900">All Payments</h3>
-          <p className="text-sm text-gray-500 mt-1">Complete payment history with space assignments</p>
-        </div>
-        <div className="p-6 border-b border-gray-200">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Search</label>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Customer, space, destination, ref..."
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 placeholder:text-gray-400"
-              />
+        <DataTable
+          title="All Payments"
+          data={payments}
+          columns={paymentColumns}
+          defaultSort={{ key: 'payment_date', dir: 'desc' }}
+          pageSize={20}
+          exportFilename={`payments`}
+          actionsRender={(payment) => (
+            <div className="whitespace-nowrap">
+              {canEdit(user) && (
+                <button onClick={() => handleEdit(payment)} className="text-orange-600 hover:text-orange-800 mr-4 transition-colors font-semibold">Edit</button>
+              )}
+              {canDelete(user) && (
+                <button onClick={() => handleDelete((payment as Payment).id)} className="text-red-600 hover:text-red-800 transition-colors font-semibold">Delete</button>
+              )}
+              {!canEdit(user) && !canDelete(user) && (<span className="text-gray-400 text-xs">View Only</span>)}
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">From</label>
-              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">To</label>
-              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Destination</label>
-              <select value={destinationFilter} onChange={(e) => setDestinationFilter(e.target.value)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium">
-                <option value="all">All</option>
-                {destinationOptions.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">GST</label>
-              <select value={gstFilter} onChange={(e) => setGstFilter(e.target.value as any)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium">
-                <option value="all">All</option>
-                <option value="yes">Includes GST</option>
-                <option value="no">No GST</option>
-              </select>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Sort By</label>
-              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium">
-                <option value="date_desc">Date (Newest First)</option>
-                <option value="date_asc">Date (Oldest First)</option>
-                <option value="amount_desc">Amount (High to Low)</option>
-                <option value="amount_asc">Amount (Low to High)</option>
-                <option value="customer_asc">Customer (A-Z)</option>
-                <option value="space_asc">Space (A-Z)</option>
-                <option value="space_desc">Space (Z-A)</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <p className="text-sm text-gray-600">Showing <span className="font-semibold text-orange-700">{filteredPayments.length}</span> of <span className="font-semibold">{payments.length}</span> payments</p>
-            </div>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gradient-to-r from-orange-500 to-orange-600">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-bold text-white uppercase">Customer</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-white uppercase">Assigned Space</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-white uppercase">Base Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-white uppercase">GST (18%)</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-white uppercase">Total Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-white uppercase">Payment Date</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-white uppercase">Payment For</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-white uppercase">Destination</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-white uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredPayments.map((payment) => {
-                const customer = payment.customer as Customer
-                const assignment = payment.assignment as Assignment
-                const space = assignment?.space as Space
-                const baseAmount = payment.amount - (payment.gst_amount || 0)
-                return (
-                  <tr key={payment.id} className="hover:bg-orange-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                      {payment.assignment_id
-                        ? (customer?.first_name && customer?.last_name
-                            ? `${customer.first_name} ${customer.last_name}`
-                            : customer?.name || '-')
-                        : 'Day Pass'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {space ? (<div><span className="font-semibold text-orange-700">{space.name}</span><span className="text-gray-500 ml-2">({space.type})</span></div>) : (<span className="text-gray-400">-</span>)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(baseAmount)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.includes_gst ? (<span className="text-green-700 font-semibold">{formatCurrency(payment.gst_amount || 0)}</span>) : (<span className="text-gray-400">-</span>)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-700">{formatCurrency(payment.amount)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDate(payment.payment_date)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{payment.payment_for_date || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-medium">{payment.destination || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {canEdit(user) && (
-                        <button onClick={() => handleEdit(payment)} className="text-orange-600 hover:text-orange-800 mr-4 transition-colors font-semibold">Edit</button>
-                      )}
-                      {canDelete(user) && (
-                        <button onClick={() => handleDelete(payment.id)} className="text-red-600 hover:text-red-800 transition-colors font-semibold">Delete</button>
-                      )}
-                      {!canEdit(user) && !canDelete(user) && (<span className="text-gray-400 text-xs">View Only</span>)}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          )}
+        />
       ) : activeTab === 'reports' ? (
         <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-orange-100">
           <div className="px-6 py-4 border-b border-orange-100 bg-gradient-to-r from-orange-50 to-white">
@@ -1130,19 +1346,22 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
                   <div className="border border-gray-200 rounded-xl overflow-hidden">
                     <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
                       <div className="font-bold">This Month ({nowKey})</div>
-                      <div className="text-sm opacity-90">{thisMonthList.length} payments • Base {formatCurrency(thisMonthTotals.base)} • GST {formatCurrency(thisMonthTotals.gst)} • Total {formatCurrency(thisMonthTotals.total)}</div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-sm opacity-90">{thisMonthList.length} payments • Base {formatCurrency(thisMonthTotals.base)} • GST {formatCurrency(thisMonthTotals.gst)} • Total {formatCurrency(thisMonthTotals.total)}</div>
+                        <button onClick={() => exportMonthCSV(nowKey, thisMonthList)} className="px-3 py-1 rounded-md bg-white/20 hover:bg-white/30 text-white text-xs font-semibold border border-white/30">Export CSV</button>
+                      </div>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-orange-50">
                           <tr>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Customer</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Space</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Base</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">GST</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Total</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Destination</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Customer</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Space</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Base</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">GST</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Total</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Date</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Destination</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -1186,7 +1405,10 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
                       <div key={m} className="border border-gray-200 rounded-xl overflow-hidden">
                         <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
                           <div className="font-bold">{m}</div>
-                          <div className="text-sm opacity-90">{list.length} payments • Base {formatCurrency(totals.base)} • GST {formatCurrency(totals.gst)} • Total {formatCurrency(totals.total)}</div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-sm opacity-90">{list.length} payments • Base {formatCurrency(totals.base)} • GST {formatCurrency(totals.gst)} • Total {formatCurrency(totals.total)}</div>
+                            <button onClick={() => exportMonthCSV(m, list)} className="px-3 py-1 rounded-md bg-white/20 hover:bg-white/30 text-white text-xs font-semibold border border-white/30">Export CSV</button>
+                          </div>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="min-w-full divide-y divide-gray-200">
@@ -1385,8 +1607,8 @@ export default function PaymentsNew({ mode }: { mode?: 'full' | 'formOnly' } = {
                         {!selectedAssignment && (<p className="text-xs text-gray-500 mt-1">Select an assignment to auto-fill the amount</p>)}
                       </div>
                       <div className="flex items-center p-4 bg-white rounded-lg border-2 border-gray-200">
-                        <input type="checkbox" id="includes_gst" checked={formData.includes_gst} onChange={(e) => handleGSTChange(e.target.checked, formData.amount)} className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer" disabled={selectedCustomer?.pays_gst === true} />
-                        <label htmlFor="includes_gst" className={`ml-3 text-sm font-semibold text-gray-700 cursor-pointer ${selectedCustomer?.pays_gst === true ? 'opacity-60' : ''}`}>Customer Pays GST (18% additional){selectedCustomer?.pays_gst === true && (<span className="ml-2 text-xs text-green-600">(Auto-enabled for this customer)</span>)}</label>
+                        <input type="checkbox" id="includes_gst" checked={formData.includes_gst} onChange={(e) => handleGSTChange(e.target.checked, formData.amount)} className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer" />
+                        <label htmlFor="includes_gst" className="ml-3 text-sm font-semibold text-gray-700 cursor-pointer">Include GST (18% additional)</label>
                       </div>
                       {formData.includes_gst && (
                         <div className="space-y-3 p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
