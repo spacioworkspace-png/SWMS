@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import PaymentsNew from "@/components/PaymentsNew"
 import { supabase } from "@/lib/supabase"
 
-export default function QuickAddPage() {
+function QuickAddContent() {
   const searchParams = useSearchParams()
   const [leadFormKey, setLeadFormKey] = useState(0)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
@@ -178,5 +178,13 @@ export default function QuickAddPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function QuickAddPage() {
+  return (
+    <Suspense fallback={<div className="p-6 max-w-6xl mx-auto">Loading quick add…</div>}>
+      <QuickAddContent />
+    </Suspense>
   )
 }

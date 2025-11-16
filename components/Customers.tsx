@@ -39,6 +39,7 @@ export default function Customers() {
     company_gstin: '',
     nature_of_business: '',
     company_registration_doc_url: '',
+    pays_gst: false,
   })
 
   useEffect(() => {
@@ -183,6 +184,7 @@ export default function Customers() {
         nature_of_business: formData.nature_of_business || null,
         company_registration_doc_url: formData.company_registration_doc_url || null,
         tax_id: formData.company_gstin || null,
+        pays_gst: formData.registration_type === 'company' ? formData.pays_gst : false,
       }
 
       if (editingCustomer) {
@@ -226,6 +228,7 @@ export default function Customers() {
       company_gstin: customer.company_gstin || customer.tax_id || '',
       nature_of_business: customer.nature_of_business || '',
       company_registration_doc_url: customer.company_registration_doc_url || '',
+      pays_gst: customer.pays_gst ?? false,
     })
     setShowModal(true)
   }
@@ -314,6 +317,7 @@ export default function Customers() {
       company_gstin: '',
       nature_of_business: '',
       company_registration_doc_url: '',
+      pays_gst: false,
     })
   }
 
