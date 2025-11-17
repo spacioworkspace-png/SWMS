@@ -174,29 +174,67 @@ export default function Leads({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
     return leads.filter((l) => l.next_follow_up_date && l.next_follow_up_date <= todayStr).length
   }, [leads])
 
+  const statusColors: Record<LeadStatus, { bg: string; text: string; icon: string }> = {
+    'new': { bg: 'bg-blue-100', text: 'text-blue-700', icon: '🆕' },
+    'contacted': { bg: 'bg-purple-100', text: 'text-purple-700', icon: '📞' },
+    'scheduled_visit': { bg: 'bg-yellow-100', text: 'text-yellow-700', icon: '📅' },
+    'converted': { bg: 'bg-green-100', text: 'text-green-700', icon: '✅' },
+    'lost': { bg: 'bg-red-100', text: 'text-red-700', icon: '❌' },
+    'on_hold': { bg: 'bg-gray-100', text: 'text-gray-700', icon: '⏸️' },
+  }
+
+  const sourceColors: Record<LeadSource, { bg: string; text: string }> = {
+    'call': { bg: 'bg-cyan-100', text: 'text-cyan-700' },
+    'visit': { bg: 'bg-indigo-100', text: 'text-indigo-700' },
+    'referral': { bg: 'bg-pink-100', text: 'text-pink-700' },
+    'website': { bg: 'bg-blue-100', text: 'text-blue-700' },
+    'google_ads': { bg: 'bg-orange-100', text: 'text-orange-700' },
+    'justdial': { bg: 'bg-amber-100', text: 'text-amber-700' },
+    'other': { bg: 'bg-gray-100', text: 'text-gray-700' },
+  }
+
+  const leadStats = useMemo(() => {
+    return LEAD_STATUSES.map(status => ({
+      status,
+      count: filteredLeads.filter(l => l.status === status).length,
+      color: statusColors[status]
+    }))
+  }, [filteredLeads])
+
   if (loading && mode !== 'formOnly') return <div className="p-8 text-center">Loading...</div>
 
   return (
     <div className="p-8 animate-fade-in">
       {mode !== 'formOnly' ? (
+        <>
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-3xl font-bold text-gray-900">Leads</h2>
             <p className="text-sm text-gray-500 mt-1">Capture and manage new leads effectively</p>
           </div>
           <div className="flex items-center space-x-3">
-            <div className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold">Reminders due: {remindersCount}</div>
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <button onClick={() => setViewMode('table')} className={`px-3 py-1 text-sm ${viewMode==='table' ? 'bg-gray-200 font-semibold' : ''}`}>Table</button>
-              <button onClick={() => setViewMode('kanban')} className={`px-3 py-1 text-sm ${viewMode==='kanban' ? 'bg-gray-200 font-semibold' : ''}`}>Kanban</button>
+            {remindersCount > 0 && <div className="px-4 py-2 rounded-lg bg-amber-100 text-amber-800 text-sm font-semibold">⚠️ {remindersCount} follow-ups due today</div>}
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex">
+              <button onClick={() => setViewMode('table')} className={`px-4 py-2 text-sm font-semibold transition-all ${viewMode==='table' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>Table</button>
+              <button onClick={() => setViewMode('kanban')} className={`px-4 py-2 text-sm font-semibold transition-all ${viewMode==='kanban' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>Kanban</button>
             </div>
-            <button onClick={openNew} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-sm font-semibold flex items-center">
+            <button onClick={openNew} className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center">
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               Add Lead
             </button>
-            <Link href="/" className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition">Back to Dashboard</Link>
+            <Link href="/" className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition font-semibold">← Back</Link>
           </div>
         </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+          {leadStats.map((stat) => (
+            <div key={stat.status} className={`${stat.color.bg} rounded-lg p-4 border-2 border-current/10`}>
+              <div className="text-2xl font-bold text-gray-900 mb-1">{stat.count}</div>
+              <div className="text-xs font-semibold text-gray-600 capitalize">{stat.status.replace('_', ' ')}</div>
+            </div>
+          ))}
+        </div>
+        </>
       ) : (
         <div className="mb-4">
           <h2 className="text-2xl font-bold text-gray-900">Quick Add Lead (Public)</h2>
@@ -243,10 +281,10 @@ export default function Leads({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
                       <div className="text-gray-500">{lead.email || '-'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">{lead.source.replace('_',' ')}</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${sourceColors[lead.source]?.bg || 'bg-gray-100'} ${sourceColors[lead.source]?.text || 'text-gray-700'}`}>{lead.source.replace('_',' ')}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">{lead.status.replace('_',' ')}</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[lead.status]?.bg} ${statusColors[lead.status]?.text}`}>{statusColors[lead.status]?.icon} {lead.status.replace('_',' ')}</span>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm ${lead.next_follow_up_date && lead.next_follow_up_date <= todayStr ? 'text-amber-700 font-semibold' : 'text-gray-600'}`}>{lead.next_follow_up_date || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm hidden sm:table-cell">
@@ -284,7 +322,7 @@ export default function Leads({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
                       <div>
                         <div className="text-sm font-semibold text-gray-900">{lead.name}</div>
                         <div className="text-xs text-gray-600">{lead.phone || '-'}{lead.email ? ` | ${lead.email}` : ''}</div>
-                        <div className="mt-1 text-xs"><span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-semibold">{lead.source.replace('_',' ')}</span></div>
+                        <div className="mt-1 text-xs"><span className={`px-2 py-0.5 rounded-full font-semibold ${sourceColors[lead.source]?.bg || 'bg-gray-100'} ${sourceColors[lead.source]?.text || 'text-gray-700'}`}>{lead.source.replace('_',' ')}</span></div>
                         {(lead.tags && lead.tags.length > 0) && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {lead.tags.map((t: string, idx: number) => (
@@ -313,12 +351,15 @@ export default function Leads({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
       )) : null}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-xl w-full overflow-hidden border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200 bg-white">
+        <div className="fixed inset-0 bg-white bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-orange-100 animate-slide-up">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-500 to-orange-600">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">{editing ? 'Edit Lead' : 'Add Lead'}</h3>
-                <button onClick={() => { setShowModal(false); setEditing(null); resetForm() }} className="text-gray-500 hover:text-gray-700 rounded-full p-1.5">
+                <div>
+                  <h3 className="text-xl font-bold text-white">{editing ? 'Edit Lead' : 'Add Lead'}</h3>
+                  <p className="text-sm text-orange-100 mt-1">Capture new lead information</p>
+                </div>
+                <button onClick={() => { setShowModal(false); setEditing(null); resetForm() }} className="text-white hover:bg-white/20 rounded-full p-1.5 transition-colors">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
@@ -362,8 +403,8 @@ export default function Leads({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
                 <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900 placeholder:text-gray-500" />
               </div>
               <div className="md:col-span-2 flex justify-end space-x-3 pt-2">
-                <button type="button" onClick={() => { setShowModal(false); setEditing(null); resetForm() }} className="px-5 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-                <button type="submit" className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg">{editing ? 'Update Lead' : 'Create Lead'}</button>
+                <button type="button" onClick={() => { setShowModal(false); setEditing(null); resetForm() }} className="px-5 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 font-semibold text-gray-700 transition-all">Cancel</button>
+                <button type="submit" className="px-5 py-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200">{editing ? 'Update Lead' : 'Create Lead'}</button>
               </div>
             </form>
           </div>

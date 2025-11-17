@@ -49,6 +49,7 @@ export default function PaymentsNew(
     todayRevenue: 0,
     thisWeekRevenue: 0,
   })
+  const [isQuickMode, setIsQuickMode] = useState(false)
 
   const destinationOptions = [
     'APPA 316',
@@ -113,7 +114,7 @@ export default function PaymentsNew(
     },
   ]), [destinationOptions])
   const [monthlyBreakdown, setMonthlyBreakdown] = useState<Record<string, { count: number; base: number; gst: number; total: number }>>({})
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'list' | 'pending' | 'reports'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'list' | 'pending' | 'reports' | 'month-end'>('dashboard')
   const [reportsSort, setReportsSort] = useState<'desc' | 'asc'>('desc')
   const [reportsRowSort, setReportsRowSort] = useState<'space_asc' | 'space_desc' | 'date_asc' | 'date_desc'>('date_asc')
   const [isLateMonth, setIsLateMonth] = useState<boolean>(false)
@@ -743,8 +744,8 @@ export default function PaymentsNew(
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      if (formData.is_manual_entry) {
-        if (!formData.manual_space_type) {
+      if (formData.is_manual_entry || isQuickMode) {
+        if (!isQuickMode && !formData.manual_space_type) {
           alert('Please select space type')
           return
         }
@@ -761,9 +762,14 @@ export default function PaymentsNew(
         const gstAmount = formData.includes_gst ? parseFloat(formData.gst_amount) || 0 : 0
         const totalAmount = baseAmount + gstAmount
 
-        const paymentForDate = formData.payment_for_month
-          ? `${formData.payment_for_month}-01`
-          : (formData.payment_date || new Date().toISOString().split('T')[0])
+        const paymentForDate = formData.payment_date || new Date().toISOString().split('T')[0]
+
+        let notesContent = ''
+        if (isQuickMode) {
+          notesContent = `Quick Entry${formData.notes ? ` - ${formData.notes}` : ''}`
+        } else {
+          notesContent = `Manual Entry - ${formData.manual_space_type}${formData.payment_for_month ? `, For: ${formData.payment_for_month}` : ''}${formData.notes ? `\n${formData.notes}` : ''}`
+        }
 
         const paymentData = {
           customer_id: null,
@@ -775,7 +781,7 @@ export default function PaymentsNew(
           gst_amount: gstAmount,
           destination: formData.destination,
           reference_number: formData.reference_number || null,
-          notes: `Manual Entry - ${formData.manual_space_type}${formData.payment_for_month ? `, For: ${formData.payment_for_month}` : ''}${formData.notes ? `\n${formData.notes}` : ''}`,
+          notes: notesContent || null,
         }
 
         const { error } = await supabase.from('payments').insert([paymentData])
@@ -991,13 +997,10 @@ export default function PaymentsNew(
             <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             Generate Monthly PDF
           </button>
-          <button
-            onClick={() => { setEditingPayment(null); resetForm(); setShowModal(true) }}
-            className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center"
-          >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            Add Payment
-          </button>
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex">
+            <button onClick={() => { setIsQuickMode(false); setEditingPayment(null); setFormData(prev => ({ ...prev, is_manual_entry: false })); resetForm(); setShowModal(true) }} className={`px-4 py-2 font-semibold text-sm transition-all ${!isQuickMode ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>Quick</button>
+            <button onClick={() => { setIsQuickMode(true); setEditingPayment(null); setFormData(prev => ({ ...prev, is_manual_entry: true, manual_space_type: 'Day Pass' })); resetForm(); setShowModal(true) }} className={`px-4 py-2 font-semibold text-sm transition-all ${isQuickMode ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>Full</button>
+          </div>
         </div>
       </div>
 
@@ -1007,14 +1010,15 @@ export default function PaymentsNew(
           <button type="button" onClick={() => setActiveTab('list')} className={`flex-1 min-w-[140px] px-4 py-3 rounded-lg border text-sm font-semibold ${activeTab === 'list' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>All Payments</button>
           <button type="button" onClick={() => setActiveTab('pending')} className={`flex-1 min-w-[140px] px-4 py-3 rounded-lg border text-sm font-semibold ${activeTab === 'pending' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>Pending</button>
           <button type="button" onClick={() => setActiveTab('reports')} className={`flex-1 min-w-[140px] px-4 py-3 rounded-lg border text-sm font-semibold ${activeTab === 'reports' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-700 border-gray-300'}`}>Reports</button>
+          <button type="button" onClick={() => setActiveTab('month-end')} className={`flex-1 min-w-[140px] px-4 py-3 rounded-lg border text-sm font-semibold ${activeTab === 'month-end' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}>📋 Month-End</button>
         </div>
       </div>
 
       {activeTab === 'dashboard' ? (
-        <div className="mb-8">
-          <h3 className="text-xl font-bold text-gray-900 mb-4">Sales Dashboard - This Month</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Monthly Revenue</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.monthlyRevenue)}</p><p className="text-sm mt-2 opacity-75">{dashboardStats.monthlyPayments} payments</p></div>
+      <div className="mb-8">
+        <h3 className="text-xl font-bold text-gray-900 mb-4">Sales Dashboard - This Month</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Monthly Revenue</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.monthlyRevenue)}</p><p className="text-sm mt-2 opacity-75">{dashboardStats.monthlyPayments} payments</p></div>
             <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Net Revenue (Base)</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.netRevenue)}</p><p className="text-sm mt-2 opacity-75">After GST deduction</p></div>
             <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white"><h4 className="text-sm mb-2 opacity-90">Total GST Collected</h4><p className="text-3xl font-bold">{formatCurrency(dashboardStats.totalGST)}</p><p className="text-sm mt-2 opacity-75">From {dashboardStats.monthlyPayments} payments</p></div>
           </div>
@@ -1087,14 +1091,14 @@ export default function PaymentsNew(
                 </div>
               ))}
             </div>
-          </div>
-          <div className="mt-6 bg-white rounded-xl border border-orange-100 p-4">
-            <h4 className="text-md font-bold text-gray-900 mb-3">Breakdown by Space Type (This Month)</h4>
-            {Object.entries(monthlyBreakdown).length === 0 ? (
-              <div className="text-sm text-gray-500">No payments recorded this month</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
+        </div>
+        <div className="mt-6 bg-white rounded-xl border border-orange-100 p-4">
+          <h4 className="text-md font-bold text-gray-900 mb-3">Breakdown by Space Type (This Month)</h4>
+          {Object.entries(monthlyBreakdown).length === 0 ? (
+            <div className="text-sm text-gray-500">No payments recorded this month</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-orange-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Space Type</th>
@@ -1102,32 +1106,32 @@ export default function PaymentsNew(
                       <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Base</th>
                       <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">GST</th>
                       <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {Object.entries(monthlyBreakdown).map(([type, stats]) => (
+                    <tr key={type}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{type}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{stats.count}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(stats.base)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-green-700 font-semibold">{formatCurrency(stats.gst)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-700">{formatCurrency(stats.total)}</td>
                     </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {Object.entries(monthlyBreakdown).map(([type, stats]) => (
-                      <tr key={type}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{type}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{stats.count}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(stats.base)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-700 font-semibold">{formatCurrency(stats.gst)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-700">{formatCurrency(stats.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
+      </div>
       ) : activeTab === 'pending' ? (
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-orange-100">
-          <div className="px-6 py-4 border-b border-orange-100 bg-gradient-to-r from-orange-50 to-white">
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-orange-100">
+        <div className="px-6 py-4 border-b border-orange-100 bg-gradient-to-r from-orange-50 to-white">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
+            <div>
                 <h3 className="text-lg font-bold text-gray-900">Pending Payments (All Months)</h3>
                 <p className="text-sm text-gray-500 mt-1">One row per pending month per assignment since start date</p>
-              </div>
+            </div>
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                 <label htmlFor="groupPending" className="sr-only">Group by</label>
                 <select id="groupPending" value={groupPendingBy} onChange={(e)=>setGroupPendingBy(e.target.value as any)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900">
@@ -1135,9 +1139,9 @@ export default function PaymentsNew(
                   <option value="month">Group by Month</option>
                   <option value="customer">Group by Customer</option>
                 </select>
-              </div>
             </div>
-          </div>
+            </div>
+            </div>
           <div className="p-6">
             {pendingRows.length === 0 ? (
               <div className="text-sm text-gray-500">No pending payments for this month 🎉</div>
@@ -1172,7 +1176,7 @@ export default function PaymentsNew(
                     })}
                   </tbody>
                 </table>
-              </div>
+            </div>
             ) : groupPendingBy === 'month' ? (
               <div className="space-y-6">
                 {Object.keys(pendingGroups).sort().map((mk) => {
@@ -1182,7 +1186,7 @@ export default function PaymentsNew(
                       <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
                         <div className="font-bold">{mk}</div>
                         <div className="text-sm opacity-90">{sect.rows.length} pending • Base {formatCurrency(sect.totals.base)} • GST {formatCurrency(sect.totals.gst)} • Total {formatCurrency(sect.totals.total)}</div>
-                      </div>
+          </div>
                       <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                           <thead className="bg-orange-50">
@@ -1218,11 +1222,11 @@ export default function PaymentsNew(
                             })}
                           </tbody>
                         </table>
-                      </div>
-                    </div>
+            </div>
+            </div>
                   )
                 })}
-              </div>
+          </div>
             ) : (
               <div className="space-y-6">
                 {(Object.entries(pendingCustomerGroups) as Array<[string, { customerName: string; rows: Array<{ a: Assignment; monthKey: string }>; totals: { base: number; gst: number; total: number } }]> )
@@ -1232,9 +1236,9 @@ export default function PaymentsNew(
                     <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
                       <div className="font-bold">{sect.customerName}</div>
                       <div className="text-sm opacity-90">{sect.rows.length} pending • Base {formatCurrency(sect.totals.base)} • GST {formatCurrency(sect.totals.gst)} • Total {formatCurrency(sect.totals.total)}</div>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-orange-50">
                           <tr>
                             <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Month</th>
@@ -1243,16 +1247,16 @@ export default function PaymentsNew(
                             <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Est. GST</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Est. Total</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
                           {sect.rows.map(({ a, monthKey }: { a: Assignment; monthKey: string }) => {
                             const c = customers.find((cc) => cc.id === a.customer_id)
                             const s = ((a.space as Space) || spaces.find((sp) => sp.id === a.space_id))
                             const base = (a.monthly_price || s?.price_per_day || 0)
                             const gst = (a as any).includes_gst ? base * 0.18 : 0
                             const total = base + gst
-                            return (
+                return (
                               <tr key={`${a.id}-${monthKey}`} className="hover:bg-orange-50">
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{monthKey}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{s?.name} <span className="text-gray-400">({s?.type})</span></td>
@@ -1261,17 +1265,17 @@ export default function PaymentsNew(
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-700">{formatCurrency(total)}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                                   <button onClick={() => startCollect(a, monthKey)} className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold">Collect</button>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
                   </div>
                 ))}
-              </div>
-            )}
+      </div>
+      )}
           </div>
         </div>
       ) : activeTab === 'list' ? (
@@ -1406,7 +1410,7 @@ export default function PaymentsNew(
                         <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
                           <div className="font-bold">{m}</div>
                           <div className="flex items-center gap-4">
-                            <div className="text-sm opacity-90">{list.length} payments • Base {formatCurrency(totals.base)} • GST {formatCurrency(totals.gst)} • Total {formatCurrency(totals.total)}</div>
+                          <div className="text-sm opacity-90">{list.length} payments • Base {formatCurrency(totals.base)} • GST {formatCurrency(totals.gst)} • Total {formatCurrency(totals.total)}</div>
                             <button onClick={() => exportMonthCSV(m, list)} className="px-3 py-1 rounded-md bg-white/20 hover:bg-white/30 text-white text-xs font-semibold border border-white/30">Export CSV</button>
                           </div>
                         </div>
@@ -1455,6 +1459,139 @@ export default function PaymentsNew(
             })()}
           </div>
         </div>
+      ) : activeTab === 'month-end' ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="mb-6">
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">📋 End of Month Report</h3>
+            <p className="text-gray-600">Summary of current month's business performance</p>
+          </div>
+
+          {(() => {
+            const now = new Date()
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+            const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+
+            const monthPayments = payments.filter(p => p.payment_date >= startOfMonth && p.payment_date <= endOfMonth)
+            const monthExpenses = [] as any[]
+
+            const totalPaymentBase = monthPayments.reduce((sum, p) => sum + (p.amount - (p.gst_amount || 0)), 0)
+            const totalPaymentGST = monthPayments.reduce((sum, p) => sum + (p.gst_amount || 0), 0)
+            const totalPaymentAmount = monthPayments.reduce((sum, p) => sum + p.amount, 0)
+
+            const occupiedSpaces = assignments.filter(a => a.status === 'active').length
+            const totalSpaces = spaces.length
+            const vacantSpaces = totalSpaces - occupiedSpaces
+
+            const gstPayments = monthPayments.filter(p => p.includes_gst).length
+            const nonGSTPayments = monthPayments.filter(p => !p.includes_gst).length
+
+            return (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border-2 border-blue-200">
+                    <p className="text-sm text-gray-600 font-semibold mb-2">Total Payments</p>
+                    <p className="text-3xl font-bold text-blue-700">{monthPayments.length}</p>
+                    <p className="text-xs text-gray-600 mt-2">{gstPayments} GST / {nonGSTPayments} Non-GST</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-6 border-2 border-green-200">
+                    <p className="text-sm text-gray-600 font-semibold mb-2">Total Revenue</p>
+                    <p className="text-3xl font-bold text-green-700">{formatCurrency(totalPaymentAmount)}</p>
+                    <p className="text-xs text-gray-600 mt-2">Base + GST</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg p-6 border-2 border-purple-200">
+                    <p className="text-sm text-gray-600 font-semibold mb-2">Vacant Spaces</p>
+                    <p className="text-3xl font-bold text-purple-700">{vacantSpaces}/{totalSpaces}</p>
+                    <p className="text-xs text-gray-600 mt-2">Available for booking</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-lg p-6 border-2 border-orange-200">
+                    <p className="text-sm text-gray-600 font-semibold mb-2">Net Revenue</p>
+                    <p className="text-3xl font-bold text-orange-700">{formatCurrency(totalPaymentBase)}</p>
+                    <p className="text-xs text-gray-600 mt-2">Before GST</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <h4 className="font-bold text-lg text-gray-900 mb-4">💰 Revenue Breakdown</h4>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-gray-700 font-semibold">GST Base Amount</span>
+                        <span className="text-lg font-bold text-gray-900">{formatCurrency(monthPayments.filter(p => p.includes_gst).reduce((sum, p) => sum + (p.amount - (p.gst_amount || 0)), 0))}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-gray-700 font-semibold">Non-GST Amount</span>
+                        <span className="text-lg font-bold text-gray-900">{formatCurrency(monthPayments.filter(p => !p.includes_gst).reduce((sum, p) => sum + p.amount, 0))}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-gray-700 font-semibold">Total GST Collected</span>
+                        <span className="text-lg font-bold text-green-700">{formatCurrency(totalPaymentGST)}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-3 bg-gray-50 rounded px-3 font-bold">
+                        <span className="text-gray-900">Total Revenue</span>
+                        <span className="text-2xl text-orange-700">{formatCurrency(totalPaymentAmount)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <h4 className="font-bold text-lg text-gray-900 mb-4">🏢 Space Status</h4>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-gray-700 font-semibold">Total Spaces</span>
+                        <span className="text-lg font-bold text-gray-900">{totalSpaces}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-gray-700 font-semibold">Occupied</span>
+                        <span className="text-lg font-bold text-green-700">{occupiedSpaces}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-gray-700 font-semibold">Vacant</span>
+                        <span className="text-lg font-bold text-red-700">{vacantSpaces}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-3 bg-gray-50 rounded px-3 font-bold">
+                        <span className="text-gray-900">Occupancy Rate</span>
+                        <span className="text-2xl text-blue-700">{totalSpaces > 0 ? ((occupiedSpaces / totalSpaces) * 100).toFixed(1) : 0}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <h4 className="font-bold text-lg text-gray-900 mb-4">📊 Payment Status</h4>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-gray-700 font-semibold">With GST</span>
+                        <span className="text-lg font-bold text-purple-700">{gstPayments}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-gray-700 font-semibold">Without GST</span>
+                        <span className="text-lg font-bold text-gray-900">{nonGSTPayments}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-gray-700 font-semibold">Pending Count</span>
+                        <span className="text-lg font-bold text-amber-700">{pendingRows.length}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-3 bg-gray-50 rounded px-3 font-bold">
+                        <span className="text-gray-900">Avg Payment</span>
+                        <span className="text-2xl text-blue-700">{formatCurrency(monthPayments.length > 0 ? totalPaymentAmount / monthPayments.length : 0)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                  <h4 className="font-bold text-lg text-gray-900 mb-3">📝 Summary Notes</h4>
+                  <ul className="space-y-2 text-sm text-gray-700">
+                    <li>✓ <strong>{monthPayments.length}</strong> payments received this month totaling <strong>{formatCurrency(totalPaymentAmount)}</strong></li>
+                    <li>✓ GST collected: <strong>{formatCurrency(totalPaymentGST)}</strong> from <strong>{gstPayments}</strong> GST-inclusive payments</li>
+                    <li>✓ Current occupancy rate: <strong>{totalSpaces > 0 ? ((occupiedSpaces / totalSpaces) * 100).toFixed(1) : 0}%</strong> ({occupiedSpaces}/{totalSpaces} spaces)</li>
+                    <li>✓ <strong>{vacantSpaces}</strong> spaces are currently vacant and available for booking</li>
+                    <li>✓ <strong>{pendingRows.length}</strong> payment(s) still pending collection</li>
+                  </ul>
+                </div>
+              </div>
+            )
+          })()}
+        </div>
       ) : null}
 
       {showModal && (
@@ -1474,6 +1611,74 @@ export default function PaymentsNew(
 
             <div className="flex-1 overflow-y-auto p-8">
               <form onSubmit={handleSubmit} className="space-y-6">
+                {isQuickMode ? (
+                  <div className="space-y-4">
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200">
+                      <h4 className="text-lg font-bold text-gray-900 mb-2">🚀 Quick Payment Entry</h4>
+                      <p className="text-sm text-gray-600">Fast mode - just the essentials</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-semibold text-gray-700">Amount <span className="text-red-500">*</span></label>
+                        <input type="number" step="0.01" required value={formData.amount} onChange={(e) => handleAmountChange(e.target.value)} placeholder="0.00" className="w-full px-4 py-3 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg font-bold text-gray-900 placeholder:text-gray-400 bg-white" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="block text-sm font-semibold text-gray-700">Destination <span className="text-red-500">*</span></label>
+                        <select required value={formData.destination || ''} onChange={(e) => setFormData((prev) => ({ ...prev, destination: e.target.value }))} className="w-full px-4 py-3 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold bg-white text-gray-900">
+                          <option value="">Select</option>
+                          {destinationOptions.map((option) => (<option key={option} value={option}>{option}</option>))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-gray-700">Payment Date</label>
+                      <input type="date" value={formData.payment_date || new Date().toISOString().split('T')[0]} onChange={(e) => setFormData((prev) => ({ ...prev, payment_date: e.target.value }))} className="w-full px-4 py-2 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900" />
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
+                      <input type="checkbox" id="quick_gst" checked={formData.includes_gst} onChange={(e) => handleGSTChange(e.target.checked, formData.amount)} className="w-5 h-5 text-blue-600 rounded" />
+                      <label htmlFor="quick_gst" className="text-sm font-semibold text-gray-700 cursor-pointer flex-1">Include GST (18%)?</label>
+                    </div>
+
+                    {formData.includes_gst && (
+                      <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border-2 border-green-200 grid grid-cols-3 gap-4 text-center">
+                        <div>
+                          <p className="text-xs text-gray-600 font-semibold mb-1">Base</p>
+                          <p className="text-xl font-bold text-gray-900">{formatCurrency(parseFloat(formData.amount) || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-600 font-semibold mb-1">GST</p>
+                          <p className="text-xl font-bold text-green-700">{formatCurrency(parseFloat(formData.gst_amount) || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-600 font-semibold mb-1">Total</p>
+                          <p className="text-xl font-bold text-green-800">{formatCurrency((parseFloat(formData.amount) || 0) + (parseFloat(formData.gst_amount) || 0))}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-gray-700">Reference (optional)</label>
+                      <input type="text" value={formData.reference_number} onChange={(e) => setFormData((prev) => ({ ...prev, reference_number: e.target.value }))} placeholder="Cheque #, Transaction ID..." className="w-full px-4 py-2 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 placeholder:text-gray-400" />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-gray-700">Notes (optional)</label>
+                      <textarea value={formData.notes} onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Any details..." className="w-full px-4 py-2 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 placeholder:text-gray-400 resize-none" rows={2} />
+                    </div>
+
+                    <div className="flex justify-end space-x-4 pt-4 border-t-2 border-gray-200">
+                      <button type="button" onClick={() => { setShowModal(false); setEditingPayment(null); resetForm() }} className="px-6 py-3 border-2 border-gray-300 rounded-lg hover:bg-gray-50 font-semibold text-gray-700 transition-all">Cancel</button>
+                      <button type="submit" className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 font-bold shadow-lg flex items-center">
+                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" /></svg>
+                        Save Payment
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
                 <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-6 border-2 border-purple-200 mb-6">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1680,6 +1885,8 @@ export default function PaymentsNew(
                     {editingPayment ? (<><svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Update Payment</>) : (<><svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Create Payment</>)}
                   </button>
                 </div>
+                  </>
+                )}
               </form>
             </div>
           </div>

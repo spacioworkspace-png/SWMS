@@ -19,6 +19,7 @@ export default function ExpensesPage() {
   const [category, setCategory] = useState('all')
   const [destination, setDestination] = useState('all')
   const [sortBy, setSortBy] = useState<'date_desc'|'date_asc'|'amount_desc'|'amount_asc'>('date_desc')
+  const [viewMode, setViewMode] = useState<'list'|'monthly'>('list')
 
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -256,12 +257,16 @@ export default function ExpensesPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Expenses</h1>
-          <p className="text-sm text-gray-600 mt-1">Track operational expenses with GST breakdown.</p>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent">Expenses</h1>
+          <p className="text-sm text-gray-600 mt-1">Track operational expenses with GST breakdown</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={onExport} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">Export CSV</button>
-          <button onClick={() => { resetForm(); setShowModal(true) }} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-sm font-semibold">Add Expense</button>
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex">
+            <button onClick={() => setViewMode('list')} className={`px-4 py-2 text-sm font-semibold transition-all ${viewMode==='list' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>List View</button>
+            <button onClick={() => setViewMode('monthly')} className={`px-4 py-2 text-sm font-semibold transition-all ${viewMode==='monthly' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>Monthly</button>
+          </div>
+          <button onClick={onExport} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 font-semibold">Export CSV</button>
+          <button onClick={() => { resetForm(); setShowModal(true) }} className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-md font-semibold">Add Expense</button>
         </div>
       </div>
 
@@ -322,30 +327,104 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* List */}
-      <DataTable
-        title="Expenses"
-        data={filtered}
-        columns={columns}
-        defaultSort={{ key: 'date', dir: 'desc' }}
-        pageSize={20}
-        exportFilename={`expenses-${dateFrom || 'all'}-to-${dateTo || 'all'}`}
-        actionsRender={(e) => (
-          <div className="whitespace-nowrap">
-            <button onClick={() => onEdit(e)} className="text-orange-600 hover:text-orange-800 mr-3 font-semibold">Edit</button>
-            <button onClick={() => onDelete(e.id)} className="text-red-600 hover:text-red-800 font-semibold">Delete</button>
-          </div>
-        )}
-      />
+      {viewMode === 'list' ? (
+        <>
+        {/* List View */}
+        <DataTable
+          title="Expenses"
+          data={filtered}
+          columns={columns}
+          defaultSort={{ key: 'date', dir: 'desc' }}
+          pageSize={20}
+          exportFilename={`expenses-${dateFrom || 'all'}-to-${dateTo || 'all'}`}
+          actionsRender={(e) => (
+            <div className="whitespace-nowrap">
+              <button onClick={() => onEdit(e)} className="text-orange-600 hover:text-orange-800 mr-3 font-semibold">Edit</button>
+              <button onClick={() => onDelete(e.id)} className="text-red-600 hover:text-red-800 font-semibold">Delete</button>
+            </div>
+          )}
+        />
+        </>
+      ) : (
+        <>
+        {/* Monthly Summary View */}
+        <div className="space-y-6">
+          {(() => {
+            const monthlyGroups: Record<string, { expenses: Expense[], base: number, gst: number, total: number }> = {}
+            filtered.forEach((exp) => {
+              const month = exp.date.slice(0, 7)
+              if (!monthlyGroups[month]) {
+                monthlyGroups[month] = { expenses: [], base: 0, gst: 0, total: 0 }
+              }
+              const base = exp.amount - (exp.gst_amount || 0)
+              const gst = exp.includes_gst ? (exp.gst_amount || 0) : 0
+              monthlyGroups[month].expenses.push(exp)
+              monthlyGroups[month].base += base
+              monthlyGroups[month].gst += gst
+              monthlyGroups[month].total += exp.amount
+            })
+            
+            return Object.entries(monthlyGroups)
+              .sort(([a], [b]) => b.localeCompare(a))
+              .map(([month, data]) => (
+                <div key={month} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="px-6 py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold flex justify-between items-center">
+                    <span>Month of {new Date(month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
+                    <div className="text-sm font-semibold space-x-6">
+                      <span>Base: {formatCurrency(data.base)}</span>
+                      <span>GST: {formatCurrency(data.gst)}</span>
+                      <span>Total: {formatCurrency(data.total)}</span>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date</th>
+                          <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Category</th>
+                          <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Vendor</th>
+                          <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Base</th>
+                          <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">GST</th>
+                          <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {data.expenses.sort((a, b) => b.date.localeCompare(a.date)).map((exp) => (
+                          <tr key={exp.id} className="hover:bg-orange-50 transition">
+                            <td className="px-6 py-3 text-sm text-gray-600">{exp.date}</td>
+                            <td className="px-6 py-3 text-sm font-medium text-gray-900">{exp.category || '-'}</td>
+                            <td className="px-6 py-3 text-sm text-gray-600">{exp.vendor || '-'}</td>
+                            <td className="px-6 py-3 text-sm font-semibold text-gray-900">{formatCurrency(exp.amount - (exp.gst_amount || 0))}</td>
+                            <td className="px-6 py-3 text-sm font-semibold text-green-700">{exp.includes_gst ? formatCurrency(exp.gst_amount || 0) : '-'}</td>
+                            <td className="px-6 py-3 text-sm font-bold text-orange-700">{formatCurrency(exp.amount)}</td>
+                            <td className="px-6 py-3 text-sm whitespace-nowrap">
+                              <button onClick={() => onEdit(exp)} className="text-orange-600 hover:text-orange-800 mr-3 font-semibold">Edit</button>
+                              <button onClick={() => onDelete(exp.id)} className="text-red-600 hover:text-red-800 font-semibold">Delete</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))
+          })()}
+        </div>
+        </>
+      )}
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-xl w-full overflow-hidden border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200 bg-white">
+        <div className="fixed inset-0 bg-white bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-orange-100 animate-slide-up">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-500 to-orange-600">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">{editing ? 'Edit Expense' : 'Add Expense'}</h3>
-                <button onClick={() => { setShowModal(false); resetForm() }} className="text-gray-500 hover:text-gray-700 rounded-full p-1.5">
+                <div>
+                  <h3 className="text-xl font-bold text-white">{editing ? 'Edit Expense' : 'Add Expense'}</h3>
+                  <p className="text-sm text-orange-100 mt-1">Record operational expense details</p>
+                </div>
+                <button onClick={() => { setShowModal(false); resetForm() }} className="text-white hover:bg-white/20 rounded-full p-1.5 transition-colors">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
@@ -394,8 +473,8 @@ export default function ExpensesPage() {
                 <input value={formData.attachment_url} onChange={(e) => setFormData((p) => ({...p, attachment_url: e.target.value}))} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-gray-900" />
               </div>
               <div className="md:col-span-2 flex justify-end space-x-3 pt-2">
-                <button type="button" onClick={() => { setShowModal(false); resetForm() }} className="px-5 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-                <button type="submit" className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg">Save</button>
+                <button type="button" onClick={() => { setShowModal(false); resetForm() }} className="px-5 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 font-semibold text-gray-700 transition-all">Cancel</button>
+                <button type="submit" className="px-5 py-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200">Save Expense</button>
               </div>
             </form>
           </div>

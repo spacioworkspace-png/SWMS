@@ -375,15 +375,76 @@ export default function Dashboard() {
     }
   }
 
-  const generateMonthlyReport = () => {
+  const generateMonthlyReport = async () => {
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
     const monthName = startOfMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+    // Fetch additional data for the report
+    const [vacantSpacesResult, pendingPaymentsResult, allSpacesResult, allAssignmentsResult] = await Promise.all([
+      supabase.from('spaces').select('*').eq('is_available', true).neq('type', 'Virtual Office'),
+      supabase
+        .from('assignments')
+        .select(`
+          *,
+          customer:customers(*),
+          space:spaces(*)
+        `)
+        .eq('status', 'active'),
+      supabase.from('spaces').select('*').order('name'),
+      supabase
+        .from('assignments')
+        .select(`
+          *,
+          customer:customers(*),
+          space:spaces(*)
+        `)
+        .eq('status', 'active'),
+    ])
+
+    const vacantSpaces = vacantSpacesResult.data || []
+    const allSpaces = allSpacesResult.data || []
+    const activeAssignments = allAssignmentsResult.data || []
+
+    // Calculate pending payments for current month
+    const monthKey = startOfMonth.toISOString().slice(0, 7)
+    const pendingPayments: any[] = []
+    for (const assignment of activeAssignments) {
+      const space = (assignment as any).space
+      if (space?.type === 'Virtual Office') continue
+      
+      const assignmentStart = (assignment.start_date || '').slice(0, 7)
+      const assignmentEnd = (assignment.end_date || '').slice(0, 7)
+      
+      if (monthKey < assignmentStart) continue
+      if (assignmentEnd && monthKey > assignmentEnd) continue
+      
+      // Check if payment exists for this month
+      const hasPayment = stats.monthlyPaymentsList.some((p: any) => 
+        p.assignment_id === assignment.id && 
+        ((p.payment_for_date || '').slice(0, 7) === monthKey || (p.payment_date || '').slice(0, 7) === monthKey)
+      )
+      
+      if (!hasPayment) {
+        const customer = (assignment as any).customer
+        const customerName = customer?.first_name && customer?.last_name
+          ? `${customer.first_name} ${customer.last_name}`
+          : customer?.name || '-'
+        pendingPayments.push({
+          customer: customerName,
+          space: space?.name || '-',
+          spaceType: space?.type || '-',
+          monthlyPrice: assignment.monthly_price || space?.price_per_day || 0,
+          includesGST: (assignment as any).includes_gst || false,
+        })
+      }
+    }
 
     const doc = new jsPDF()
 
-    // Header
-    doc.setFillColor(99, 102, 241)
+    // Header with orange theme
+    doc.setFillColor(244, 127, 37) // Orange-500
     doc.rect(0, 0, 210, 36, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFont('helvetica', 'bold')
@@ -391,24 +452,31 @@ export default function Dashboard() {
     doc.text('Spacio Workspace', 14, 18)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(12)
-    doc.text(`Monthly Report — ${monthName}`, 14, 28)
+    doc.text(`End of Month Report — ${monthName}`, 14, 28)
 
     // Summary block
     doc.setTextColor(0, 0, 0)
     doc.setFontSize(12)
     const summaryY = 46
-    doc.text('Summary', 14, summaryY)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Executive Summary', 14, summaryY)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
     const lines = [
-      `Total Payments: ${stats.monthlyPaymentsList.length}`,
+      `Total Payments Received: ${stats.monthlyPaymentsList.length}`,
       `Base Revenue (No GST): ${formatCurrency(stats.monthlyBaseRevenue)}`,
+      `Base Revenue (With GST): ${formatCurrency(stats.baseWithGST)}`,
+      `Non-GST Base: ${formatCurrency(stats.baseNoGST)}`,
       `GST Collected: ${formatCurrency(stats.monthlyGST)}`,
       `Total Revenue (Incl. GST): ${formatCurrency(stats.monthlyRevenue)}`,
       `Expenses — Base: ${formatCurrency(stats.expensesBase)} | GST: ${formatCurrency(stats.expensesGST)} | Total: ${formatCurrency(stats.expensesTotal)}`,
       `Expected Monthly Base — GST: ${formatCurrency(stats.expectedBaseGST)} | Non-GST: ${formatCurrency(stats.expectedBaseNonGST)} | Expected GST (18%): ${formatCurrency(stats.expectedGSTTax)}`,
       `Security Deposit (Active): ${formatCurrency(stats.totalSecurityDeposit)}`,
+      `Pending Payments: ${pendingPayments.length} assignments`,
+      `Vacant Cabins/Spaces: ${vacantSpaces.length}`,
       `Last Month — Base: ${formatCurrency(stats.lastMonthBase)} | GST: ${formatCurrency(stats.lastMonthGST)} | Total: ${formatCurrency(stats.lastMonthTotal)}`,
     ]
-    lines.forEach((t, i) => doc.text(t, 14, summaryY + 8 + i * 6))
+    lines.forEach((t, i) => doc.text(t, 14, summaryY + 8 + i * 5))
 
     // Payments table
     const paymentsTableStart = summaryY + 8 + lines.length * 6 + 6
@@ -426,7 +494,7 @@ export default function Dashboard() {
       body: paymentsBody,
       theme: 'striped',
       styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+      headStyles: { fillColor: [244, 127, 37], textColor: [255, 255, 255] },
     })
 
     // Category table (Active assignments by space type)
@@ -472,10 +540,83 @@ export default function Dashboard() {
       headStyles: { fillColor: [244, 127, 37], textColor: [255, 255, 255] },
     })
 
-    // GST Reconciliation
+    // Vacant Cabins/Spaces Table
     const afterExpensesY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : afterDestY
+    if (vacantSpaces.length > 0) {
+      const vacantBody = vacantSpaces.map((s: any) => [
+        s.name || '-',
+        s.type || '-',
+        formatCurrency(s.price_per_day || 0),
+        s.capacity ? s.capacity.toString() : '-',
+      ])
+      autoTable(doc, {
+        startY: afterExpensesY,
+        head: [['Vacant Cabins/Spaces', 'Type', 'Monthly Price', 'Capacity']],
+        body: vacantBody,
+        theme: 'striped',
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255] },
+      })
+    }
+
+    // Pending Payments Table
+    const afterVacantY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : afterExpensesY
+    if (pendingPayments.length > 0) {
+      const pendingBody = pendingPayments.map((p: any) => {
+        const base = p.monthlyPrice
+        const gst = p.includesGST ? base * 0.18 : 0
+        const total = base + gst
+        return [
+          p.customer,
+          p.space,
+          p.spaceType,
+          formatCurrency(base),
+          p.includesGST ? formatCurrency(gst) : '-',
+          formatCurrency(total),
+        ]
+      })
+      autoTable(doc, {
+        startY: afterVacantY,
+        head: [['Pending Payments (This Month)', 'Customer', 'Space', 'Type', 'Base', 'GST', 'Total']],
+        body: pendingBody,
+        theme: 'striped',
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [239, 68, 68], textColor: [255, 255, 255] },
+      })
+    }
+
+    // Rent Breakdown Summary
+    const afterPendingY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : afterVacantY
+    const rentBreakdownBody = [
+      ['Rent Breakdown', 'Base (GST)', 'Base (Non-GST)', 'GST Collected', 'Total Revenue'],
+      [
+        'This Month',
+        formatCurrency(stats.baseWithGST),
+        formatCurrency(stats.baseNoGST),
+        formatCurrency(stats.monthlyGST),
+        formatCurrency(stats.monthlyRevenue),
+      ],
+      [
+        'Expected (All Active)',
+        formatCurrency(stats.expectedBaseGST),
+        formatCurrency(stats.expectedBaseNonGST),
+        formatCurrency(stats.expectedGSTTax),
+        formatCurrency(stats.expectedBaseGST + stats.expectedBaseNonGST + stats.expectedGSTTax),
+      ],
+    ]
     autoTable(doc, {
-      startY: afterExpensesY,
+      startY: afterPendingY,
+      head: [rentBreakdownBody[0]],
+      body: [rentBreakdownBody[1], rentBreakdownBody[2]],
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [244, 127, 37], textColor: [255, 255, 255] },
+    })
+
+    // GST Reconciliation
+    const afterRentY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : afterPendingY
+    autoTable(doc, {
+      startY: afterRentY,
       head: [['GST Reconciliation', 'Amount']],
       body: [
         ['GST Collected (Payments)', formatCurrency(stats.monthlyGST)],
@@ -496,7 +637,7 @@ export default function Dashboard() {
       doc.text(`Page ${i} of ${pageCount} | Generated on ${new Date().toLocaleDateString('en-US')}`, 105, 287, { align: 'center' })
     }
 
-    doc.save(`Spacio-Monthly-Report-${monthName.replace(' ', '-')}.pdf`)
+    doc.save(`Spacio-End-of-Month-Report-${monthName.replace(' ', '-')}.pdf`)
   }
 
   if (loading) {
@@ -512,7 +653,7 @@ export default function Dashboard() {
           className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-5 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 shadow-md font-semibold flex items-center"
         >
           <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-          Generate Monthly Report
+          Generate End of Month Report
         </button>
       </div>
 
