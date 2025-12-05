@@ -15,6 +15,7 @@ export default function Navigation() {
     { href: '/assignments', label: 'Assignments' },
     { href: '/payments', label: 'Payments' },
     { href: '/expenses', label: 'Expenses' },
+    { href: '/reports', label: 'Reports' },
     { href: '/leads', label: 'Leads' },
   ]
 

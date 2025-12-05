@@ -95,3 +95,43 @@ export interface Payment {
   assignment?: Assignment;
 }
 
+export interface ZohoInvoice {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  amount: number;
+  base_amount: number | null;
+  gst_amount: number;
+  includes_gst: boolean;
+  payment_date: string | null;
+  payment_status: string | null;
+  month_key: string;
+  zoho_customer_id: string | null;
+  notes: string | null;
+  import_batch_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaymentComparison {
+  internalPayment?: Payment;
+  zohoInvoice?: ZohoInvoice;
+  customerName: string;
+  monthKey: string;
+  amountDifference: number;
+  baseDifference: number;
+  gstDifference: number;
+  status: 'match' | 'mismatch' | 'internal_only' | 'zoho_only';
+  assigned?: boolean; // Whether manually assigned
+}
+
+export interface PaymentAssignment {
+  id: string;
+  payment_id: string;
+  zoho_invoice_id: string;
+  created_at: string;
+  updated_at: string;
+}
+

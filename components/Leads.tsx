@@ -203,34 +203,64 @@ export default function Leads({ mode }: { mode?: 'full' | 'formOnly' } = {}) {
 
   if (loading && mode !== 'formOnly') return <div className="p-8 text-center">Loading...</div>
 
+  const now = new Date()
+  const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const newLeadsThisMonth = leads.filter((lead) => {
+    const created = new Date(lead.created_at)
+    return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear()
+  }).length
+  const convertedCount = leads.filter((lead) => lead.status === 'converted').length
+  const hotLeads = leads.filter((lead) => ['scheduled_visit', 'contacted'].includes(lead.status)).length
+  const conversionRate = leads.length ? ((convertedCount / leads.length) * 100).toFixed(0) : '0'
+
+  const heroStats = [
+    { label: 'Total Leads', value: leads.length.toString(), sub: `${convertedCount} converted • ${conversionRate}% win` },
+    { label: 'New This Month', value: newLeadsThisMonth.toString(), sub: monthLabel },
+    { label: 'Follow-ups Due', value: remindersCount.toString(), sub: 'Need attention today' },
+    { label: 'Hot Pipeline', value: hotLeads.toString(), sub: 'Contacted or scheduled visits' },
+  ]
+
   return (
-    <div className="p-8 animate-fade-in">
+    <div className="p-8 space-y-8 animate-fade-in">
       {mode !== 'formOnly' ? (
         <>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-3xl font-bold text-gray-900">Leads</h2>
-            <p className="text-sm text-gray-500 mt-1">Capture and manage new leads effectively</p>
-          </div>
-          <div className="flex items-center space-x-3">
-            {remindersCount > 0 && <div className="px-4 py-2 rounded-lg bg-amber-100 text-amber-800 text-sm font-semibold">⚠️ {remindersCount} follow-ups due today</div>}
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex">
-              <button onClick={() => setViewMode('table')} className={`px-4 py-2 text-sm font-semibold transition-all ${viewMode==='table' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>Table</button>
-              <button onClick={() => setViewMode('kanban')} className={`px-4 py-2 text-sm font-semibold transition-all ${viewMode==='kanban' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>Kanban</button>
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-3xl text-white p-8 shadow-xl border border-orange-200/40">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div>
+              <p className="text-xs uppercase tracking-[0.4em] text-orange-100">Lead Desk</p>
+              <h1 className="text-3xl md:text-4xl font-bold mt-2">Pipeline Overview</h1>
+              <p className="text-sm md:text-base text-orange-100 mt-2 max-w-3xl">
+                Monitor how prospects flow from first contact to conversions. Stay ahead of follow-ups and keep the occupancy pipeline healthy.
+              </p>
             </div>
-            <button onClick={openNew} className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center">
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-              Add Lead
-            </button>
-            <Link href="/" className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition font-semibold">← Back</Link>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="bg-white/10 border border-white/20 rounded-2xl p-2 flex items-center">
+                <button onClick={() => setViewMode('table')} className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${viewMode==='table' ? 'bg-white text-orange-600 shadow' : 'text-white hover:bg-white/10'}`}>Table</button>
+                <button onClick={() => setViewMode('kanban')} className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${viewMode==='kanban' ? 'bg-white text-orange-600 shadow' : 'text-white hover:bg-white/10'}`}>Kanban</button>
+              </div>
+              <button onClick={openNew} className="bg-white text-orange-600 px-5 py-3 rounded-xl font-semibold shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center">
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                Add Lead
+              </button>
+              <Link href="/" className="bg-white/10 border border-white/20 text-white px-5 py-3 rounded-xl font-semibold hover:bg-white/20 transition-all duration-200 flex items-center justify-center">Back Home</Link>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+            {heroStats.map((stat) => (
+              <div key={stat.label} className="bg-white/10 rounded-2xl p-4 backdrop-blur border border-white/20">
+                <p className="text-xs uppercase tracking-widest text-orange-100">{stat.label}</p>
+                <p className="text-2xl font-bold mt-2">{stat.value}</p>
+                <p className="text-xs text-orange-100 mt-2">{stat.sub}</p>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           {leadStats.map((stat) => (
-            <div key={stat.status} className={`${stat.color.bg} rounded-lg p-4 border-2 border-current/10`}>
-              <div className="text-2xl font-bold text-gray-900 mb-1">{stat.count}</div>
-              <div className="text-xs font-semibold text-gray-600 capitalize">{stat.status.replace('_', ' ')}</div>
+            <div key={stat.status} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+              <p className="text-xs uppercase font-semibold text-gray-500">{stat.status.replace('_', ' ')}</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{stat.count}</p>
             </div>
           ))}
         </div>

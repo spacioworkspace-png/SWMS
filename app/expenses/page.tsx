@@ -253,25 +253,63 @@ export default function ExpensesPage() {
     ], `expenses-${dateFrom || 'all'}-to-${dateTo || 'all'}`)
   }
 
+  const now = new Date()
+  const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const expensesThisMonth = expenses.filter((e) => e.date.startsWith(currentMonthKey))
+  const monthTotal = expensesThisMonth.reduce((sum, e) => sum + e.amount, 0)
+  const monthGST = expensesThisMonth.reduce((sum, e) => sum + (e.includes_gst ? (e.gst_amount || 0) : 0), 0)
+  const monthVendors = new Set(expensesThisMonth.map((e) => e.vendor || 'Unknown')).size
+  const avgTicket = expensesThisMonth.length ? monthTotal / expensesThisMonth.length : 0
+  const topCategory = (() => {
+    const map = new Map<string, number>()
+    expensesThisMonth.forEach((e) => {
+      const key = e.category || 'Misc'
+      map.set(key, (map.get(key) || 0) + e.amount)
+    })
+    const sorted = Array.from(map.entries()).sort((a, b) => b[1] - a[1])
+    return sorted[0]?.[0] || 'NA'
+  })()
+  const heroStats = [
+    { label: 'Month Spend', value: formatCurrency(monthTotal), sub: monthLabel },
+    { label: 'GST Paid', value: formatCurrency(monthGST), sub: 'Input credit to claim' },
+    { label: 'Vendors Paid', value: monthVendors.toString(), sub: 'Active this month' },
+    { label: 'Avg Ticket', value: formatCurrency(avgTicket), sub: `Top category: ${topCategory}` },
+  ]
+
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent">Expenses</h1>
-          <p className="text-sm text-gray-600 mt-1">Track operational expenses with GST breakdown</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex">
-            <button onClick={() => setViewMode('list')} className={`px-4 py-2 text-sm font-semibold transition-all ${viewMode==='list' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>List View</button>
-            <button onClick={() => setViewMode('monthly')} className={`px-4 py-2 text-sm font-semibold transition-all ${viewMode==='monthly' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>Monthly</button>
+    <div className="p-8 space-y-8 max-w-6xl mx-auto">
+      <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-3xl text-white p-8 shadow-xl border border-orange-200/40">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div>
+            <p className="text-xs uppercase tracking-[0.4em] text-orange-100">Expense Control</p>
+            <h1 className="text-3xl md:text-4xl font-bold mt-2">Spend & GST Overview</h1>
+            <p className="text-sm md:text-base text-orange-100 mt-2 max-w-3xl">
+              Review every rupee leaving the workspace accounts, make sure GST input credits are captured, and keep monthly burn predictable.
+            </p>
           </div>
-          <button onClick={onExport} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 font-semibold">Export CSV</button>
-          <button onClick={() => { resetForm(); setShowModal(true) }} className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-md font-semibold">Add Expense</button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="bg-white/10 border border-white/20 rounded-2xl p-2 flex items-center">
+              <button onClick={() => setViewMode('list')} className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${viewMode==='list' ? 'bg-white text-orange-600 shadow' : 'text-white hover:bg-white/10'}`}>List</button>
+              <button onClick={() => setViewMode('monthly')} className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${viewMode==='monthly' ? 'bg-white text-orange-600 shadow' : 'text-white hover:bg-white/10'}`}>Monthly</button>
+            </div>
+            <button onClick={onExport} className="bg-white/10 border border-white/20 text-white px-5 py-3 rounded-xl font-semibold hover:bg-white/20 transition-all duration-200">Export CSV</button>
+            <button onClick={() => { resetForm(); setShowModal(true) }} className="bg-white text-orange-600 px-5 py-3 rounded-xl font-semibold shadow-md hover:shadow-lg transition-all duration-200">Add Expense</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+          {heroStats.map((stat) => (
+            <div key={stat.label} className="bg-white/10 rounded-2xl p-4 backdrop-blur border border-white/20">
+              <p className="text-xs uppercase tracking-widest text-orange-100">{stat.label}</p>
+              <p className="text-2xl font-bold mt-2">{stat.value}</p>
+              <p className="text-xs text-orange-100 mt-2">{stat.sub}</p>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200 mb-4">
+      <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
         <div className="grid md:grid-cols-6 gap-3">
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">From</label>
@@ -312,18 +350,18 @@ export default function ExpensesPage() {
       </div>
 
       {/* Summary */}
-      <div className="grid md:grid-cols-3 gap-3 mb-4">
-        <div className="p-4 rounded-xl border bg-white">
-          <div className="text-xs text-gray-500">Base</div>
-          <div className="text-2xl font-bold">{formatCurrency(totals.base)}</div>
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="p-5 rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <p className="text-xs uppercase font-semibold text-gray-500">Base (Excl. GST)</p>
+          <p className="text-3xl font-bold text-gray-900 mt-2">{formatCurrency(totals.base)}</p>
         </div>
-        <div className="p-4 rounded-xl border bg-white">
-          <div className="text-xs text-gray-500">GST (18%)</div>
-          <div className="text-2xl font-bold">{formatCurrency(totals.gst)}</div>
+        <div className="p-5 rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <p className="text-xs uppercase font-semibold text-gray-500">GST Component</p>
+          <p className="text-3xl font-bold text-gray-900 mt-2">{formatCurrency(totals.gst)}</p>
         </div>
-        <div className="p-4 rounded-xl border bg-white">
-          <div className="text-xs text-gray-500">Total</div>
-          <div className="text-2xl font-bold">{formatCurrency(totals.total)}</div>
+        <div className="p-5 rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <p className="text-xs uppercase font-semibold text-gray-500">Total Outflow</p>
+          <p className="text-3xl font-bold text-gray-900 mt-2">{formatCurrency(totals.total)}</p>
         </div>
       </div>
 

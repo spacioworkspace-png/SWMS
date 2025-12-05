@@ -7,6 +7,34 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
+const MetricCard = ({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string
+  value: string | number
+  sub?: string
+  accent: string
+}) => {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-semibold bg-gradient-to-br ${accent} mb-4`}>
+        {label
+          .split(' ')
+          .slice(0, 2)
+          .map((word) => word.charAt(0))
+          .join('')
+          .toUpperCase()}
+      </div>
+      <p className="text-xs font-semibold tracking-wide text-gray-500 uppercase">{label}</p>
+      <p className="text-3xl font-bold text-gray-900 mt-2">{value}</p>
+      {sub && <p className="text-sm text-gray-500 mt-2">{sub}</p>}
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState({
     totalSpaces: 0,
@@ -644,160 +672,212 @@ export default function Dashboard() {
     return <div className="p-8 text-center animate-pulse">Loading...</div>
   }
 
+  const now = new Date()
+  const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const todayLabel = now.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' })
+  const occupancyRate =
+    stats.totalSpaces > 0 ? ((stats.occupiedSpaces / stats.totalSpaces) * 100).toFixed(1) : '0.0'
+  const expectedTotalRevenue = stats.expectedBaseGST + stats.expectedBaseNonGST + stats.expectedGSTTax
+  const billingGap = Math.max(expectedTotalRevenue - stats.monthlyRevenue, 0)
+  const expenseRatio = stats.monthlyRevenue
+    ? ((stats.expensesTotal / stats.monthlyRevenue) * 100).toFixed(1)
+    : '0.0'
+  const netGST = stats.monthlyGST - stats.expensesGST
+
+  const heroHighlights = [
+    {
+      label: 'Monthly Revenue',
+      value: formatCurrency(stats.monthlyRevenue),
+      sub: `Target ${formatCurrency(expectedTotalRevenue || 0)}`,
+    },
+    {
+      label: 'Pending Billing Gap',
+      value: billingGap > 0 ? formatCurrency(billingGap) : '₹0',
+      sub: billingGap > 0 ? 'Collect from pending assignments' : 'All caught up',
+    },
+    {
+      label: 'Occupancy Rate',
+      value: `${occupancyRate}%`,
+      sub: `${stats.occupiedSpaces}/${stats.totalSpaces} spaces filled`,
+    },
+    {
+      label: 'Expense Ratio',
+      value: `${expenseRatio}%`,
+      sub: `${formatCurrency(stats.expensesTotal)} spent this month`,
+    },
+  ]
+
+  const metricSections = [
+    {
+      title: 'Core Operations',
+      description: 'At a glance view of spaces, people, and live assignments.',
+      cards: [
+        {
+          label: 'Total Spaces',
+          value: stats.totalSpaces,
+          sub: `${stats.availableSpaces} available • Vacant value ${formatCurrency(stats.vacantValue)}`,
+          accent: 'from-orange-500 to-orange-600',
+        },
+        {
+          label: 'Active Assignments',
+          value: stats.activeAssignments,
+          sub: `${stats.totalCustomers} total customers`,
+          accent: 'from-violet-500 to-indigo-600',
+        },
+        {
+          label: 'Monthly Leads',
+          value: stats.monthlyLeadsCount,
+          sub: 'New leads captured this month',
+          accent: 'from-pink-500 to-rose-500',
+        },
+        {
+          label: 'Security Deposits',
+          value: formatCurrency(stats.totalSecurityDeposit),
+          sub: 'Across all active assignments',
+          accent: 'from-emerald-500 to-emerald-600',
+        },
+      ],
+    },
+    {
+      title: 'Revenue & Collections',
+      description: 'Understand booked vs expected rent flow for the month.',
+      cards: [
+        {
+          label: 'Revenue (Incl. GST)',
+          value: formatCurrency(stats.monthlyRevenue),
+          sub: 'Collected this month',
+          accent: 'from-orange-500 to-amber-500',
+        },
+        {
+          label: 'Base (No GST)',
+          value: formatCurrency(stats.baseNoGST),
+          sub: `${stats.monthlyRevenue ? ((stats.baseNoGST / stats.monthlyRevenue) * 100).toFixed(1) : '0'}% of total`,
+          accent: 'from-blue-500 to-blue-600',
+        },
+        {
+          label: 'Base (With GST)',
+          value: formatCurrency(stats.baseWithGST),
+          sub: `${stats.monthlyRevenue ? ((stats.baseWithGST / stats.monthlyRevenue) * 100).toFixed(1) : '0'}% of total`,
+          accent: 'from-green-500 to-green-600',
+        },
+        {
+          label: 'GST Collected',
+          value: formatCurrency(stats.totalGSTCollected),
+          sub: `Net GST payable ${formatCurrency(netGST)}`,
+          accent: 'from-lime-500 to-lime-600',
+        },
+        {
+          label: 'Expected Base (GST)',
+          value: formatCurrency(stats.expectedBaseGST),
+          sub: 'Active assignments marked GST',
+          accent: 'from-sky-500 to-cyan-500',
+        },
+        {
+          label: 'Expected Base (Non-GST)',
+          value: formatCurrency(stats.expectedBaseNonGST),
+          sub: 'Active assignments without GST',
+          accent: 'from-slate-500 to-slate-600',
+        },
+        {
+          label: 'Expected GST (18%)',
+          value: formatCurrency(stats.expectedGSTTax),
+          sub: 'On GST assignments',
+          accent: 'from-rose-500 to-red-500',
+        },
+        {
+          label: 'Additional Income',
+          value: formatCurrency(stats.additionalIncome),
+          sub: 'Manual entries or day passes',
+          accent: 'from-purple-500 to-purple-600',
+        },
+      ],
+    },
+    {
+      title: 'Cash & Exceptions',
+      description: 'Track leakages, special categories, and expense burn.',
+      cards: [
+        {
+          label: 'Unknown Destination',
+          value: formatCurrency(stats.unknownPayments),
+          sub: 'Payments without mapped account',
+          accent: 'from-gray-500 to-gray-600',
+        },
+        {
+          label: 'Virtual Office & Day Pass',
+          value: formatCurrency(stats.virtualOfficePayments),
+          sub: 'VO linked payments',
+          accent: 'from-teal-500 to-teal-600',
+        },
+        {
+          label: 'Monthly Expenses',
+          value: formatCurrency(stats.expensesTotal),
+          sub: `Base ${formatCurrency(stats.expensesBase)} • GST ${formatCurrency(stats.expensesGST)}`,
+          accent: 'from-red-500 to-red-600',
+        },
+        {
+          label: 'Occupancy Rate',
+          value: `${occupancyRate}%`,
+          sub: `${stats.occupiedSpaces} occupied • ${stats.availableSpaces} free`,
+          accent: 'from-pink-500 to-pink-600',
+        },
+      ],
+    },
+  ]
+
   return (
-    <div className="p-8 animate-fade-in">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <button
-          onClick={generateMonthlyReport}
-          className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-5 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 shadow-md font-semibold flex items-center"
-        >
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-          Generate End of Month Report
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Total Spaces</h3>
-          <p className="text-3xl font-bold">{stats.totalSpaces}</p>
-          <p className="text-sm mt-2 opacity-75">{stats.availableSpaces} available, {stats.occupiedSpaces} occupied</p>
+    <div className="p-8 space-y-8 animate-fade-in">
+      <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-3xl shadow-xl p-8 border border-orange-200/40">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div>
+            <p className="text-sm uppercase tracking-[0.3em] text-orange-100">Spacio Control Room</p>
+            <h1 className="text-3xl md:text-4xl font-bold mt-2">Monthly Pulse — {monthLabel}</h1>
+            <p className="text-sm md:text-base text-orange-100 mt-2 max-w-2xl">
+              Live view of occupancy, revenue, collections, GST and expenses. Use it as your morning briefing
+              to understand where cash is flowing and what needs action today ({todayLabel}).
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={generateMonthlyReport}
+              className="bg-white/10 border border-white/30 text-white px-5 py-3 rounded-xl hover:bg-white/20 transition-all duration-200 shadow-md font-semibold flex items-center"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              End of Month Report
+            </button>
+            <Link
+              href="/reports"
+              className="bg-white text-orange-600 px-5 py-3 rounded-xl font-semibold shadow-md hover:shadow-lg transition-all duration-200"
+            >
+              Detailed Reports
+            </Link>
+          </div>
         </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Available Spaces</h3>
-          <p className="text-3xl font-bold">{stats.availableSpaces}</p>
-          <p className="text-sm mt-2 opacity-75">Vacant spaces</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Vacant Value</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.vacantValue)}</p>
-          <p className="text-sm mt-2 opacity-75">Monthly rent potential</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Total Customers</h3>
-          <p className="text-3xl font-bold">{stats.totalCustomers}</p>
-          <Link href="/customers" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
-            View all →
-          </Link>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Active Assignments</h3>
-          <p className="text-3xl font-bold">{stats.activeAssignments}</p>
-          <Link href="/assignments" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
-            View all →
-          </Link>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Total Payments</h3>
-          <p className="text-3xl font-bold">{stats.totalPayments}</p>
-          <Link href="/payments" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
-            View all →
-          </Link>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Leads (This Month)</h3>
-          <p className="text-3xl font-bold">{stats.monthlyLeadsCount}</p>
-          <Link href="/leads" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
-            View leads →
-          </Link>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Monthly Revenue (Total)</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.monthlyRevenue)}</p>
-          <p className="text-sm mt-2 opacity-75">This month</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Base Revenue (No GST)</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.monthlyBaseRevenue)}</p>
-          <p className="text-sm mt-2 opacity-75">Without GST</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Revenue with GST</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.monthlyRevenueWithGST)}</p>
-          <p className="text-sm mt-2 opacity-75">Base + GST</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-lime-500 to-lime-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">GST Collected</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.monthlyGST)}</p>
-          <p className="text-sm mt-2 opacity-75">18% GST amount</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Occupancy Rate</h3>
-          <p className="text-3xl font-bold">
-            {stats.totalSpaces > 0
-              ? ((stats.occupiedSpaces / stats.totalSpaces) * 100).toFixed(1)
-              : 0}
-            %
-          </p>
-          <p className="text-sm mt-2 opacity-75">Spaces occupied</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-violet-500 to-violet-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Monthly Base from Assignments</h3>
-          <p className="text-3xl font-bold">
-            {formatCurrency(isNaN(stats.monthlyBaseFromAssignments) ? 0 : stats.monthlyBaseFromAssignments)}
-          </p>
-          <p className="text-sm mt-2 opacity-75">
-            Expected monthly base revenue ({stats.activeAssignments} active assignments)
-          </p>
-          <Link href="/assignments" className="text-sm mt-2 inline-block opacity-75 hover:opacity-100 transition-opacity">
-            View assignments →
-          </Link>
-        </div>
-
-        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Additional Income</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.additionalIncome)}</p>
-          <p className="text-sm mt-2 opacity-75">Manual entries (no assignment)</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Virtual Office Payments and Day pass</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.virtualOfficePayments)}</p>
-          <p className="text-sm mt-2 opacity-75">Payments tied to VO assignments</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Total Security Deposit</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.totalSecurityDeposit)}</p>
-          <p className="text-sm mt-2 opacity-75">Across active assignments</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-sky-500 to-sky-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Expected Base (GST)</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.expectedBaseGST)}</p>
-          <p className="text-sm mt-2 opacity-75">Active assignments (excl. VO)</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-sky-500 to-sky-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Expected Base (Non-GST)</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.expectedBaseNonGST)}</p>
-          <p className="text-sm mt-2 opacity-75">Active assignments (excl. VO)</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-lime-500 to-lime-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Expected GST Tax (18%)</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.expectedGSTTax)}</p>
-          <p className="text-sm mt-2 opacity-75">On expected GST base</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-lg shadow-lg p-6 text-white animate-scale-in">
-          <h3 className="text-sm font-medium mb-2 opacity-90">Expenses (This Month)</h3>
-          <p className="text-3xl font-bold">{formatCurrency(stats.expensesTotal)}</p>
-          <p className="text-sm mt-2 opacity-75">Base {formatCurrency(stats.expensesBase)} • GST {formatCurrency(stats.expensesGST)}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+          {heroHighlights.map((item) => (
+            <div key={item.label} className="bg-white/10 rounded-2xl p-4 backdrop-blur border border-white/20">
+              <p className="text-xs uppercase tracking-widest text-orange-100">{item.label}</p>
+              <p className="text-2xl font-bold mt-2">{item.value}</p>
+              <p className="text-xs text-orange-100 mt-2">{item.sub}</p>
+            </div>
+          ))}
         </div>
       </div>
+
+      {metricSections.map((section) => (
+        <div key={section.title} className="space-y-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">{section.title}</h2>
+            <p className="text-sm text-gray-500 mt-1">{section.description}</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+            {section.cards.map((card) => (
+              <MetricCard key={card.label} {...card} />
+            ))}
+          </div>
+        </div>
+      ))}
 
       {/* Payment by Destination */}
       {stats.paymentByDestination.length > 0 && (
