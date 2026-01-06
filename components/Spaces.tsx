@@ -254,7 +254,7 @@ export default function Spaces() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900 font-medium"
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
             >
               <option value="name_asc">Name (A-Z)</option>
               <option value="name_desc">Name (Z-A)</option>
@@ -269,7 +269,7 @@ export default function Spaces() {
         {/* Results Count */}
         <div className="mt-4 pt-4 border-t border-gray-200">
           <p className="text-sm text-gray-600">
-            Showing <span className="font-semibold text-blue-700">{filteredSpaces.length}</span> of{' '}
+            Showing <span className="font-semibold text-orange-700">{filteredSpaces.length}</span> of{' '}
             <span className="font-semibold">{spaces.length}</span> spaces
           </p>
         </div>
@@ -294,7 +294,7 @@ export default function Spaces() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{space.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{space.type}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800 capitalize">
+                  <span className="px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-800 capitalize">
                     {getBillingCycle(space.type)}
                   </span>
                 </td>
@@ -306,7 +306,7 @@ export default function Spaces() {
                   <span
                     className={`px-2 py-1 text-xs rounded-full ${
                       space.is_available
-                        ? 'bg-green-100 text-green-800'
+                        ? 'bg-orange-100 text-orange-800'
                         : 'bg-red-100 text-red-800'
                     }`}
                   >
@@ -317,7 +317,7 @@ export default function Spaces() {
                   {canEdit(user) && (
                     <button
                       onClick={() => handleEdit(space)}
-                      className="text-blue-600 hover:text-blue-900 mr-4 transition-colors font-semibold"
+                      className="text-orange-600 hover:text-orange-900 mr-4 transition-colors font-semibold"
                     >
                       Edit
                     </button>
@@ -344,11 +344,11 @@ export default function Spaces() {
         <div className="fixed inset-0 bg-white bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] overflow-hidden flex flex-col animate-slide-up">
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-8 py-6 text-white">
+            <div className="bg-gradient-to-r from-orange-600 to-orange-700 px-8 py-6 text-white">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-2xl font-bold">{editingSpace ? 'Edit Space' : 'Add New Space'}</h3>
-                  <p className="text-blue-100 text-sm mt-1">Configure space details below</p>
+                  <p className="text-orange-100 text-sm mt-1">Configure space details below</p>
                 </div>
                 <button
                   onClick={() => {
@@ -429,7 +429,7 @@ export default function Spaces() {
                         value={formData.price_per_day}
                         onChange={(e) => setFormData({ ...formData, price_per_day: e.target.value })}
                         placeholder="0.00"
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white hover:border-gray-400 text-gray-900 placeholder:text-gray-400"
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white hover:border-gray-400 text-gray-900 placeholder:text-gray-400"
                       />
                       <p className="text-xs text-gray-500">This is the monthly rental price</p>
                     </div>
@@ -475,7 +475,7 @@ export default function Spaces() {
                   </button>
                   <button
                     type="submit"
-                    className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 hover:scale-105 shadow-lg font-semibold flex items-center"
+                    className="px-8 py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl hover:from-orange-700 hover:to-orange-800 transition-all duration-200 hover:scale-105 shadow-lg font-semibold flex items-center"
                   >
                     {editingSpace ? (
                       <>

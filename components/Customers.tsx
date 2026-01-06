@@ -15,6 +15,7 @@ export default function Customers() {
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [sortBy, setSortBy] = useState<string>('name_asc')
+  const [customerStatusFilter, setCustomerStatusFilter] = useState<'all' | 'active' | 'past'>('all') // Filter for active vs past customers
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
@@ -79,15 +80,43 @@ export default function Customers() {
       const res = await fetch('/api/customers/sheets-import', {
         method: 'POST',
       })
+      const data = await res.json()
       if (!res.ok) {
-        const msg = (await res.json()).error || 'Import failed'
-        throw new Error(msg)
+        const errorMsg = data.details || data.error || 'Import failed'
+        let fullError = errorMsg
+        if (data.validationErrors && data.validationErrors.length > 0) {
+          fullError += '\n\nValidation errors:\n' + data.validationErrors.slice(0, 5).join('\n')
+          if (data.validationErrors.length > 5) {
+            fullError += `\n... and ${data.validationErrors.length - 5} more`
+          }
+        }
+        if (data.insertErrors && data.insertErrors.length > 0) {
+          fullError += '\n\nInsert errors:\n' + data.insertErrors.slice(0, 5).join('\n')
+          if (data.insertErrors.length > 5) {
+            fullError += `\n... and ${data.insertErrors.length - 5} more`
+          }
+        }
+        throw new Error(fullError)
       }
-      const { inserted, skipped, totalRows } = await res.json()
-      alert(`Import complete. Inserted: ${inserted}, Skipped (existing): ${skipped}, Sheet rows: ${totalRows}`)
+      const { inserted, skipped, totalRows, validationErrors, insertErrors } = data
+      let message = `Import complete. Inserted: ${inserted}, Skipped (existing): ${skipped}, Sheet rows: ${totalRows}`
+      if (validationErrors && validationErrors.length > 0) {
+        message += `\n\nWarning: ${validationErrors.length} rows had validation errors (check console for details)`
+      }
+      if (insertErrors && insertErrors.length > 0) {
+        message += `\n\nWarning: ${insertErrors.length} rows failed to insert (check console for details)`
+      }
+      alert(message)
+      if (validationErrors && validationErrors.length > 0) {
+        console.warn('Validation errors:', validationErrors)
+      }
+      if (insertErrors && insertErrors.length > 0) {
+        console.error('Insert errors:', insertErrors)
+      }
       await fetchCustomers()
       await fetchActiveAssignments()
     } catch (err: any) {
+      console.error('Import error:', err)
       alert(`Import error: ${err.message || err}`)
     }
   }
@@ -117,6 +146,14 @@ export default function Customers() {
       filtered = filtered.filter((c) => c.registration_type === typeFilter)
     }
 
+    // Customer status filter (active vs past)
+    if (customerStatusFilter === 'active') {
+      filtered = filtered.filter((c) => activeAssignments.has(c.id))
+    } else if (customerStatusFilter === 'past') {
+      filtered = filtered.filter((c) => !activeAssignments.has(c.id))
+    }
+    // If customerStatusFilter is 'all', show all customers
+
     // GST logic removed from customers; handled at assignment level
 
     // Sort
@@ -142,7 +179,7 @@ export default function Customers() {
     })
 
     setFilteredCustomers(filtered)
-  }, [customers, searchTerm, typeFilter, sortBy])
+  }, [customers, searchTerm, typeFilter, sortBy, customerStatusFilter, activeAssignments])
 
   const fetchCustomers = async () => {
     try {
@@ -456,6 +493,52 @@ export default function Customers() {
               <p className="text-xs text-orange-100 mt-2">{stat.sub}</p>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Customer Status Tabs */}
+      <div className="bg-white rounded-xl shadow-lg p-4 mb-6 border border-orange-100">
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-semibold text-gray-700">View:</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCustomerStatusFilter('active')}
+              className={`px-6 py-2 rounded-lg font-semibold transition-all ${
+                customerStatusFilter === 'active'
+                  ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Active Customers
+            </button>
+            <button
+              onClick={() => setCustomerStatusFilter('past')}
+              className={`px-6 py-2 rounded-lg font-semibold transition-all ${
+                customerStatusFilter === 'past'
+                  ? 'bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Past Customers
+            </button>
+            <button
+              onClick={() => setCustomerStatusFilter('all')}
+              className={`px-6 py-2 rounded-lg font-semibold transition-all ${
+                customerStatusFilter === 'all'
+                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All Customers
+            </button>
+          </div>
+          <div className="ml-auto flex items-center gap-2 text-sm text-gray-600">
+            <span className="font-semibold">{activeCustomers}</span>
+            <span>active</span>
+            <span className="mx-2">•</span>
+            <span className="font-semibold">{inactiveCustomers}</span>
+            <span>past</span>
+          </div>
         </div>
       </div>
 

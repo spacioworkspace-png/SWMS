@@ -50,10 +50,12 @@ export default function Dashboard() {
     monthlyGST: 0,
     recentPayments: [] as any[],
     paymentByDestination: [] as { destination: string; amount: number; count: number }[],
-    baseNoGST: 0, // Total base amount for payments without GST
-    baseWithGST: 0, // Total base amount for payments with GST
-    totalGSTCollected: 0, // Total GST collected
+    baseNoGST: 0, // Total base amount for payments without GST (excl. Virtual Office)
+    baseWithGST: 0, // Total base amount for payments with GST (excl. Virtual Office)
+    totalGSTCollected: 0, // Total GST collected (excl. Virtual Office)
     monthlyBaseFromAssignments: 0, // Total monthly base revenue from all active assignments
+    monthlyBaseRevenueExclVO: 0, // Monthly base revenue excluding Virtual Office
+    monthlyGSTExclVO: 0, // Monthly GST excluding Virtual Office
     activeByCategory: [] as { type: string; count: number }[],
     monthlyPaymentsList: [] as any[],
     monthlyLeadsCount: 0,
@@ -226,22 +228,44 @@ export default function Dashboard() {
       const expensesGST = expensesList.reduce((s: number, e: any) => s + (e.includes_gst ? (e.gst_amount || 0) : 0), 0)
       const expensesBase = expensesTotal - expensesGST
 
-      // Calculate base amounts by GST status
-      const baseNoGST = monthlyPayments.reduce((sum, p) => {
+      // Filter out Virtual Office payments for base calculations
+      // Payments already include assignment and space data from the query
+      const nonVOPayments = monthlyPayments.filter((p: any) => {
+        // Check if payment is linked to a Virtual Office assignment
+        const spaceType = p.assignment?.space?.type
+        if (spaceType === 'Virtual Office') {
+          return false
+        }
+        // If no assignment or space type, include it (manual payments, day passes, etc.)
+        return true
+      })
+
+      // Calculate base amounts by GST status (excluding Virtual Office)
+      const baseNoGST = nonVOPayments.reduce((sum, p) => {
         if (!p.includes_gst) {
           return sum + (p.amount || 0)
         }
         return sum
       }, 0)
 
-      const baseWithGST = monthlyPayments.reduce((sum, p) => {
+      const baseWithGST = nonVOPayments.reduce((sum, p) => {
         if (p.includes_gst) {
           return sum + (p.amount || 0) - (p.gst_amount || 0)
         }
         return sum
       }, 0)
 
-      const totalGSTCollected = monthlyPayments.reduce((sum, p) => sum + (p.gst_amount || 0), 0)
+      const totalGSTCollected = nonVOPayments.reduce((sum, p) => sum + (p.gst_amount || 0), 0)
+      
+      // Also recalculate monthlyBaseRevenue excluding Virtual Office
+      const monthlyBaseRevenueExclVO = nonVOPayments.reduce((sum, p) => {
+        if (p.includes_gst) {
+          return sum + (p.amount || 0) - (p.gst_amount || 0)
+        }
+        return sum + (p.amount || 0)
+      }, 0)
+      
+      const monthlyGSTExclVO = nonVOPayments.reduce((sum, p) => sum + (p.gst_amount || 0), 0)
       const monthlyLeadsCount = leadsThisMonthResult.data?.length || 0
 
       // Calculate monthly base revenue from all active assignments (exclude Virtual Office)
@@ -376,6 +400,8 @@ export default function Dashboard() {
         baseWithGST,
         totalGSTCollected,
         monthlyBaseFromAssignments,
+        monthlyBaseRevenueExclVO,
+        monthlyGSTExclVO,
         activeByCategory,
         monthlyPaymentsList: monthlyPayments,
         // New metrics
@@ -682,7 +708,8 @@ export default function Dashboard() {
   const expenseRatio = stats.monthlyRevenue
     ? ((stats.expensesTotal / stats.monthlyRevenue) * 100).toFixed(1)
     : '0.0'
-  const netGST = stats.monthlyGST - stats.expensesGST
+  // Use GST excluding Virtual Office for net GST calculation
+  const netGST = stats.monthlyGSTExclVO - stats.expensesGST
 
   const heroHighlights = [
     {
@@ -722,19 +749,19 @@ export default function Dashboard() {
           label: 'Active Assignments',
           value: stats.activeAssignments,
           sub: `${stats.totalCustomers} total customers`,
-          accent: 'from-violet-500 to-indigo-600',
+          accent: 'from-orange-600 to-orange-700',
         },
         {
           label: 'Monthly Leads',
           value: stats.monthlyLeadsCount,
           sub: 'New leads captured this month',
-          accent: 'from-pink-500 to-rose-500',
+          accent: 'from-orange-500 to-orange-600',
         },
         {
           label: 'Security Deposits',
           value: formatCurrency(stats.totalSecurityDeposit),
           sub: 'Across all active assignments',
-          accent: 'from-emerald-500 to-emerald-600',
+          accent: 'from-orange-500 to-orange-600',
         },
       ],
     },
@@ -746,49 +773,55 @@ export default function Dashboard() {
           label: 'Revenue (Incl. GST)',
           value: formatCurrency(stats.monthlyRevenue),
           sub: 'Collected this month',
-          accent: 'from-orange-500 to-amber-500',
+          accent: 'from-orange-500 to-orange-600',
         },
         {
           label: 'Base (No GST)',
           value: formatCurrency(stats.baseNoGST),
-          sub: `${stats.monthlyRevenue ? ((stats.baseNoGST / stats.monthlyRevenue) * 100).toFixed(1) : '0'}% of total`,
-          accent: 'from-blue-500 to-blue-600',
+          sub: 'Excluding Virtual Office payments',
+          accent: 'from-orange-400 to-orange-500',
         },
         {
           label: 'Base (With GST)',
           value: formatCurrency(stats.baseWithGST),
-          sub: `${stats.monthlyRevenue ? ((stats.baseWithGST / stats.monthlyRevenue) * 100).toFixed(1) : '0'}% of total`,
-          accent: 'from-green-500 to-green-600',
+          sub: 'Excluding Virtual Office payments',
+          accent: 'from-orange-500 to-orange-600',
         },
         {
           label: 'GST Collected',
           value: formatCurrency(stats.totalGSTCollected),
-          sub: `Net GST payable ${formatCurrency(netGST)}`,
-          accent: 'from-lime-500 to-lime-600',
+          sub: `Excluding Virtual Office • Net GST payable ${formatCurrency(netGST)}`,
+          accent: 'from-orange-500 to-orange-600',
         },
         {
           label: 'Expected Base (GST)',
           value: formatCurrency(stats.expectedBaseGST),
           sub: 'Active assignments marked GST',
-          accent: 'from-sky-500 to-cyan-500',
+          accent: 'from-orange-400 to-orange-500',
         },
         {
           label: 'Expected Base (Non-GST)',
           value: formatCurrency(stats.expectedBaseNonGST),
           sub: 'Active assignments without GST',
-          accent: 'from-slate-500 to-slate-600',
+          accent: 'from-orange-300 to-orange-400',
         },
         {
           label: 'Expected GST (18%)',
           value: formatCurrency(stats.expectedGSTTax),
           sub: 'On GST assignments',
-          accent: 'from-rose-500 to-red-500',
+          accent: 'from-orange-600 to-orange-700',
         },
         {
           label: 'Additional Income',
           value: formatCurrency(stats.additionalIncome),
           sub: 'Manual entries or day passes',
-          accent: 'from-purple-500 to-purple-600',
+          accent: 'from-orange-500 to-orange-600',
+        },
+        {
+          label: 'Total Base Monthly Rents',
+          value: formatCurrency(stats.monthlyBaseFromAssignments),
+          sub: 'From all active assignments (excl. Virtual Office)',
+          accent: 'from-orange-500 to-orange-600',
         },
       ],
     },
@@ -800,25 +833,25 @@ export default function Dashboard() {
           label: 'Unknown Destination',
           value: formatCurrency(stats.unknownPayments),
           sub: 'Payments without mapped account',
-          accent: 'from-gray-500 to-gray-600',
+          accent: 'from-orange-300 to-orange-400',
         },
         {
           label: 'Virtual Office & Day Pass',
           value: formatCurrency(stats.virtualOfficePayments),
           sub: 'VO linked payments',
-          accent: 'from-teal-500 to-teal-600',
+          accent: 'from-orange-500 to-orange-600',
         },
         {
           label: 'Monthly Expenses',
           value: formatCurrency(stats.expensesTotal),
           sub: `Base ${formatCurrency(stats.expensesBase)} • GST ${formatCurrency(stats.expensesGST)}`,
-          accent: 'from-red-500 to-red-600',
+          accent: 'from-orange-600 to-orange-700',
         },
         {
           label: 'Occupancy Rate',
           value: `${occupancyRate}%`,
           sub: `${stats.occupiedSpaces} occupied • ${stats.availableSpaces} free`,
-          accent: 'from-pink-500 to-pink-600',
+          accent: 'from-orange-500 to-orange-600',
         },
       ],
     },
@@ -987,7 +1020,7 @@ export default function Dashboard() {
 
       {/* Active Spaces by Category */}
       <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden animate-fade-in mb-8">
-        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-violet-50 to-white">
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-white">
           <h2 className="text-xl font-bold text-gray-900">Active Spaces by Category</h2>
           <p className="text-sm text-gray-500 mt-1">Count of active assignments grouped by space type</p>
         </div>
@@ -997,12 +1030,12 @@ export default function Dashboard() {
               {stats.activeByCategory.map((item, index) => (
                 <div
                   key={`${item.type}-${index}`}
-                  className="bg-gradient-to-br from-violet-50 to-white rounded-xl p-5 border-2 border-violet-100 hover:shadow-md transition-all animate-scale-in"
+                  className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-5 border-2 border-orange-100 hover:shadow-md transition-all animate-scale-in"
                   style={{ animationDelay: `${index * 0.06}s` }}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-gray-700">{item.type}</h3>
-                    <span className="px-2 py-1 text-xs font-bold rounded-full bg-violet-200 text-violet-800">
+                    <span className="px-2 py-1 text-xs font-bold rounded-full bg-orange-200 text-orange-800">
                       {item.count}
                     </span>
                   </div>
@@ -1018,50 +1051,50 @@ export default function Dashboard() {
 
       {/* GST Breakdown Section */}
       <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden animate-fade-in mb-8">
-        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-emerald-50 to-white">
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-white">
           <h2 className="text-xl font-bold text-gray-900">GST Breakdown - This Month</h2>
-          <p className="text-sm text-gray-500 mt-1">Revenue breakdown by GST status</p>
+          <p className="text-sm text-gray-500 mt-1">Revenue breakdown by GST status (Excluding Virtual Office)</p>
         </div>
         <div className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Base Amount - No GST */}
-            <div className="bg-gradient-to-br from-blue-50 to-white rounded-xl p-6 border-2 border-blue-200 hover:shadow-md transition-all">
+            <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-6 border-2 border-orange-200 hover:shadow-md transition-all">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-gray-700">Base Amount (No GST)</h3>
-                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                <div className="w-10 h-10 bg-orange-400 rounded-full flex items-center justify-center">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
               </div>
-              <p className="text-3xl font-bold text-blue-700 mb-2">{formatCurrency(stats.baseNoGST)}</p>
-              <p className="text-xs text-gray-600">Customers who don't pay GST</p>
-              <div className="mt-3 pt-3 border-t border-blue-200">
+              <p className="text-3xl font-bold text-orange-700 mb-2">{formatCurrency(stats.baseNoGST)}</p>
+              <p className="text-xs text-gray-600">Customers who don't pay GST (Excl. Virtual Office)</p>
+              <div className="mt-3 pt-3 border-t border-orange-200">
                 <p className="text-xs text-gray-500">
-                  {stats.monthlyRevenue > 0
-                    ? `${((stats.baseNoGST / stats.monthlyRevenue) * 100).toFixed(1)}% of total revenue`
-                    : '0% of total revenue'}
+                  {stats.monthlyBaseRevenueExclVO > 0
+                    ? `${((stats.baseNoGST / stats.monthlyBaseRevenueExclVO) * 100).toFixed(1)}% of base revenue`
+                    : '0% of base revenue'}
                 </p>
               </div>
             </div>
 
             {/* Base Amount - With GST */}
-            <div className="bg-gradient-to-br from-green-50 to-white rounded-xl p-6 border-2 border-green-200 hover:shadow-md transition-all">
+            <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-6 border-2 border-orange-200 hover:shadow-md transition-all">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-gray-700">Base Amount (With GST)</h3>
-                <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
               </div>
-              <p className="text-3xl font-bold text-green-700 mb-2">{formatCurrency(stats.baseWithGST)}</p>
-              <p className="text-xs text-gray-600">Base amount before GST</p>
-              <div className="mt-3 pt-3 border-t border-green-200">
+              <p className="text-3xl font-bold text-orange-700 mb-2">{formatCurrency(stats.baseWithGST)}</p>
+              <p className="text-xs text-gray-600">Base amount before GST (Excl. Virtual Office)</p>
+              <div className="mt-3 pt-3 border-t border-orange-200">
                 <p className="text-xs text-gray-500">
-                  {stats.monthlyRevenue > 0
-                    ? `${((stats.baseWithGST / stats.monthlyRevenue) * 100).toFixed(1)}% of total revenue`
-                    : '0% of total revenue'}
+                  {stats.monthlyBaseRevenueExclVO > 0
+                    ? `${((stats.baseWithGST / stats.monthlyBaseRevenueExclVO) * 100).toFixed(1)}% of base revenue`
+                    : '0% of base revenue'}
                 </p>
               </div>
             </div>
@@ -1077,7 +1110,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="text-3xl font-bold text-orange-700 mb-2">{formatCurrency(stats.totalGSTCollected)}</p>
-              <p className="text-xs text-gray-600">GST tax amount (18%)</p>
+              <p className="text-xs text-gray-600">GST tax amount (18%) - Excluding Virtual Office</p>
               <div className="mt-3 pt-3 border-t border-orange-200">
                 <p className="text-xs text-gray-500">
                   {stats.baseWithGST > 0
@@ -1097,20 +1130,24 @@ export default function Dashboard() {
                   <p className="text-lg font-bold text-gray-900">
                     {formatCurrency(stats.baseNoGST + stats.baseWithGST)}
                   </p>
+                  <p className="text-xs text-gray-400 mt-1">(Excl. Virtual Office)</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 mb-1">Base (No GST)</p>
-                  <p className="text-lg font-semibold text-blue-700">{formatCurrency(stats.baseNoGST)}</p>
+                  <p className="text-lg font-semibold text-orange-600">{formatCurrency(stats.baseNoGST)}</p>
+                  <p className="text-xs text-gray-400 mt-1">(Excl. Virtual Office)</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 mb-1">Base (With GST)</p>
-                  <p className="text-lg font-semibold text-green-700">{formatCurrency(stats.baseWithGST)}</p>
+                  <p className="text-lg font-semibold text-orange-600">{formatCurrency(stats.baseWithGST)}</p>
+                  <p className="text-xs text-gray-400 mt-1">(Excl. Virtual Office)</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 mb-1">Total Revenue (Incl. GST)</p>
                   <p className="text-lg font-bold text-orange-700">
                     {formatCurrency(stats.baseNoGST + stats.baseWithGST + stats.totalGSTCollected)}
                   </p>
+                  <p className="text-xs text-gray-400 mt-1">(Excl. Virtual Office)</p>
                 </div>
               </div>
             </div>

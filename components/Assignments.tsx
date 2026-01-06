@@ -24,6 +24,7 @@ export default function Assignments() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [rentStatusFilter, setRentStatusFilter] = useState<string>('all') // New filter for rent status
   const [sortBy, setSortBy] = useState<string>('date_desc')
+  const [viewMode, setViewMode] = useState<'active' | 'past' | 'all'>('active') // Filter for active vs past assignments
   const [formData, setFormData] = useState({
     customer_id: '',
     space_id: '',
@@ -74,7 +75,15 @@ export default function Assignments() {
       })
     }
 
-    // Status filter
+    // View mode filter (active vs past)
+    if (viewMode === 'active') {
+      filtered = filtered.filter((assignment) => assignment.status === 'active')
+    } else if (viewMode === 'past') {
+      filtered = filtered.filter((assignment) => assignment.status !== 'active')
+    }
+    // If viewMode is 'all', show all assignments
+
+    // Status filter (additional granular filter)
     if (statusFilter !== 'all') {
       filtered = filtered.filter((assignment) => assignment.status === statusFilter)
     }
@@ -134,7 +143,7 @@ export default function Assignments() {
     })
 
     setFilteredAssignments(filtered)
-  }, [assignments, searchTerm, statusFilter, rentStatusFilter, sortBy])
+  }, [assignments, searchTerm, statusFilter, rentStatusFilter, sortBy, viewMode])
 
   const fetchData = async () => {
     try {
@@ -343,85 +352,6 @@ export default function Assignments() {
   const selectedSpace = spaces.find((s) => s.id === formData.space_id)
   const spacesToShow = editingAssignment ? spaces : availableSpaces
 
-  // Filter and sort assignments
-  useEffect(() => {
-    let filtered = [...assignments]
-
-    // Search filter
-    if (searchTerm) {
-      filtered = filtered.filter((assignment) => {
-        const customer = assignment.customer as Customer
-        const space = assignment.space as Space
-        const customerName = customer?.first_name && customer?.last_name
-          ? `${customer.first_name} ${customer.last_name}`
-          : customer?.name || ''
-        const spaceName = space?.name || ''
-        const searchLower = searchTerm.toLowerCase()
-        return (
-          customerName.toLowerCase().includes(searchLower) ||
-          spaceName.toLowerCase().includes(searchLower) ||
-          space?.type?.toLowerCase().includes(searchLower)
-        )
-      })
-    }
-
-    // Status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter((assignment) => assignment.status === statusFilter)
-    }
-
-    // Rent status filter (pending/received) - only applies to active assignments
-    if (rentStatusFilter !== 'all') {
-      filtered = filtered.filter((assignment: any) => {
-        // Only filter active assignments by rent status
-        if (assignment.status !== 'active') {
-          // For non-active assignments, don't show when filtering by rent status
-          return false
-        }
-        return assignment.rentStatus === rentStatusFilter
-      })
-    }
-
-    // Sort
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'date_desc':
-          return new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
-        case 'date_asc':
-          return new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
-        case 'customer_asc':
-          const aName = (a.customer as Customer)?.first_name && (a.customer as Customer)?.last_name
-            ? `${(a.customer as Customer).first_name} ${(a.customer as Customer).last_name}`
-            : (a.customer as Customer)?.name || ''
-          const bName = (b.customer as Customer)?.first_name && (b.customer as Customer)?.last_name
-            ? `${(b.customer as Customer).first_name} ${(b.customer as Customer).last_name}`
-            : (b.customer as Customer)?.name || ''
-          return aName.localeCompare(bName)
-        case 'space_asc':
-          const aSpace = (a.space as Space)?.name || ''
-          const bSpace = (b.space as Space)?.name || ''
-          return aSpace.localeCompare(bSpace)
-        case 'price_desc':
-          return (b.monthly_price || 0) - (a.monthly_price || 0)
-        case 'price_asc':
-          return (a.monthly_price || 0) - (b.monthly_price || 0)
-        case 'rent_pending_first':
-          // Sort by rent status: pending first, then received, then N/A
-          const aRentStatus = (a as any).rentStatus || (a.status === 'active' ? 'pending' : 'na')
-          const bRentStatus = (b as any).rentStatus || (b.status === 'active' ? 'pending' : 'na')
-          if (aRentStatus === 'pending' && bRentStatus !== 'pending') return -1
-          if (aRentStatus !== 'pending' && bRentStatus === 'pending') return 1
-          if (aRentStatus === 'received' && bRentStatus === 'na') return -1
-          if (aRentStatus === 'na' && bRentStatus === 'received') return 1
-          return 0
-        default:
-          return 0
-      }
-    })
-
-    setFilteredAssignments(filtered)
-  }, [assignments, searchTerm, statusFilter, rentStatusFilter, sortBy])
-
   if (loading) {
     return <div className="p-8 text-center animate-pulse">Loading...</div>
   }
@@ -476,7 +406,7 @@ export default function Assignments() {
     <div className="p-8 animate-fade-in">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-purple-700 bg-clip-text text-transparent">
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent">
             Assignments
           </h2>
           <p className="text-sm text-gray-500 mt-1">Manage space assignments and renewals</p>
@@ -490,7 +420,7 @@ export default function Assignments() {
                 resetForm()
                 setShowModal(true)
               }}
-              className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-2 rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center"
+              className="bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-2 rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all duration-200 hover:scale-105 shadow-md font-semibold flex items-center"
             >
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -501,8 +431,58 @@ export default function Assignments() {
         </div>
       </div>
 
+      {/* View Mode Tabs */}
+      <div className="bg-white rounded-xl shadow-lg p-4 mb-6 border border-orange-100">
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-semibold text-gray-700">View:</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setViewMode('active')}
+              className={`px-6 py-2 rounded-lg font-semibold transition-all ${
+                viewMode === 'active'
+                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Active Assignments
+            </button>
+            <button
+              onClick={() => setViewMode('past')}
+              className={`px-6 py-2 rounded-lg font-semibold transition-all ${
+                viewMode === 'past'
+                  ? 'bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Past Assignments
+            </button>
+            <button
+              onClick={() => setViewMode('all')}
+              className={`px-6 py-2 rounded-lg font-semibold transition-all ${
+                viewMode === 'all'
+                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All Assignments
+            </button>
+          </div>
+          <div className="ml-auto flex items-center gap-2 text-sm text-gray-600">
+            <span className="font-semibold">
+              {assignments.filter((a) => a.status === 'active').length}
+            </span>
+            <span>active</span>
+            <span className="mx-2">•</span>
+            <span className="font-semibold">
+              {assignments.filter((a) => a.status !== 'active').length}
+            </span>
+            <span>past</span>
+          </div>
+        </div>
+      </div>
+
       {/* Search, Filter, and Sort Controls */}
-      <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-purple-100">
+      <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-orange-100">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Search */}
           <div>
@@ -512,7 +492,7 @@ export default function Assignments() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search by customer or space..."
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900 placeholder:text-gray-400"
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 placeholder:text-gray-400"
             />
           </div>
 
@@ -522,7 +502,7 @@ export default function Assignments() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900 font-medium"
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
             >
               <option value="all">All Status</option>
               <option value="active">Active</option>
@@ -537,7 +517,7 @@ export default function Assignments() {
             <select
               value={rentStatusFilter}
               onChange={(e) => setRentStatusFilter(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900 font-medium"
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
             >
               <option value="all">All Rent Status</option>
               <option value="pending">Pending Rent</option>
@@ -551,7 +531,7 @@ export default function Assignments() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-gray-900 font-medium"
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
             >
               <option value="date_desc">Date (Newest First)</option>
               <option value="date_asc">Date (Oldest First)</option>
@@ -567,56 +547,92 @@ export default function Assignments() {
         {/* Results Count */}
         <div className="mt-4 pt-4 border-t border-gray-200">
           <p className="text-sm text-gray-600">
-            Showing <span className="font-semibold text-purple-700">{filteredAssignments.length}</span> of{' '}
+            Showing <span className="font-semibold text-orange-700">{filteredAssignments.length}</span> of{' '}
             <span className="font-semibold">{assignments.length}</span> assignments
           </p>
         </div>
       </div>
 
-      <div className="overflow-x-auto shadow-lg rounded-lg">
-        <table className="min-w-full bg-white border border-gray-200">
-          <thead className="bg-orange-50">
+      <div className="overflow-x-auto shadow-lg rounded-lg border border-gray-200">
+        <table className="min-w-full bg-white">
+          <thead className="bg-gradient-to-r from-orange-600 to-orange-700">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Customer</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Space</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Billing</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Start Date</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Renewal Date</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">End Date</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Monthly Price</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">GST</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Total</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Security Deposit</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Payment Destination</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Rent Status (This Month)</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-orange-700 uppercase">Actions</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Customer</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Space</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Billing</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Start Date</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Renewal Date</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">End Date</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Monthly Price</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">GST</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Total</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Security Deposit</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Payment Destination</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Rent Status</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Status</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
-            {filteredAssignments.map((assignment) => {
-              const customer = assignment.customer as Customer
-              const space = assignment.space as Space
-              const billingCycle = space ? getBillingCycle(space.type) : 'monthly'
-              return (
-                <tr key={assignment.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {customer?.first_name && customer?.last_name
-                      ? `${customer.first_name} ${customer.last_name}`
-                      : customer?.name || '-'}
+          <tbody className="divide-y divide-gray-200 bg-white">
+            {filteredAssignments.length === 0 ? (
+              <tr>
+                <td colSpan={14} className="px-6 py-12 text-center">
+                  <div className="flex flex-col items-center justify-center">
+                    <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-gray-500 font-medium text-lg">No assignments found</p>
+                    <p className="text-gray-400 text-sm mt-1">Try adjusting your filters</p>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              filteredAssignments.map((assignment) => {
+                const customer = assignment.customer as Customer
+                const space = assignment.space as Space
+                const billingCycle = space ? getBillingCycle(space.type) : 'monthly'
+                const isActive = assignment.status === 'active'
+                return (
+                  <tr 
+                    key={assignment.id} 
+                    className={`transition-colors ${
+                      isActive 
+                        ? 'hover:bg-orange-50 border-l-4 border-l-orange-500' 
+                        : 'hover:bg-gray-50 border-l-4 border-l-gray-400 opacity-75'
+                    }`}
+                  >
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm mr-3 ${
+                        isActive ? 'bg-orange-500' : 'bg-gray-400'
+                      }`}>
+                        {customer?.first_name?.charAt(0)?.toUpperCase() || customer?.name?.charAt(0)?.toUpperCase() || '?'}
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {customer?.first_name && customer?.last_name
+                            ? `${customer.first_name} ${customer.last_name}`
+                            : customer?.name || '-'}
+                        </div>
+                        {customer?.email && (
+                          <div className="text-xs text-gray-500">{customer.email}</div>
+                        )}
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {space?.name || '-'} ({space?.type || '-'})
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">{space?.name || '-'}</div>
+                    <div className="text-xs text-gray-500">{space?.type || '-'}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800 capitalize">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="px-3 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-700 capitalize">
                       {billingCycle}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                     {formatDate(assignment.start_date)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-700 font-semibold">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     {(() => {
                       const renewalDate = (assignment as any).renewal_date || 
                         (assignment.start_date ? (() => {
@@ -624,41 +640,60 @@ export default function Assignments() {
                           date.setMonth(date.getMonth() + 11)
                           return date.toISOString().split('T')[0]
                         })() : null)
-                      return renewalDate ? formatDate(renewalDate) : '-'
+                      return renewalDate ? (
+                        <span className="text-sm font-semibold text-orange-600">
+                          {formatDate(renewalDate)}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400">-</span>
+                      )
                     })()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {assignment.end_date ? formatDate(assignment.end_date) : '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-semibold">
-                    {assignment.monthly_price ? formatCurrency(assignment.monthly_price) : '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {(assignment as any).includes_gst ? (
-                      <span className="text-green-700 font-semibold">
-                        {formatCurrency(assignment.monthly_price ? assignment.monthly_price * 0.18 : 0)} (18%)
-                      </span>
-                    ) : (
-                      <span className="text-gray-500">₹0.00</span>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    {assignment.end_date ? formatDate(assignment.end_date) : (
+                      <span className="text-gray-400 italic">Ongoing</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-purple-700">
-                    {assignment.monthly_price
-                      ? formatCurrency(
-                          assignment.monthly_price * ((assignment as any).includes_gst ? 1.18 : 1)
-                        )
-                      : '-'}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-semibold text-gray-900">
+                      {assignment.monthly_price ? formatCurrency(assignment.monthly_price) : '-'}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {(assignment as any).includes_gst ? (
+                      <div className="text-sm">
+                        <div className="font-semibold text-orange-700">
+                          {formatCurrency(assignment.monthly_price ? assignment.monthly_price * 0.18 : 0)}
+                        </div>
+                        <div className="text-xs text-gray-500">18%</div>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400">₹0.00</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-bold text-orange-700">
+                      {assignment.monthly_price
+                        ? formatCurrency(
+                            assignment.monthly_price * ((assignment as any).includes_gst ? 1.18 : 1)
+                          )
+                        : '-'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                     {formatCurrency(assignment.security_deposit || 0)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">
-                    {(assignment as any).payment_destination || '-'}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-700 font-medium">
+                      {(assignment as any).payment_destination || (
+                        <span className="text-gray-400 italic">Not set</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     {assignment.status === 'active' ? (
                       (assignment as any).rentStatus === 'received' ? (
-                        <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                        <span className="px-3 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">
                           Rent Received
                         </span>
                       ) : (
@@ -674,31 +709,34 @@ export default function Assignments() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
-                      className={`px-2 py-1 text-xs rounded-full ${
+                      className={`px-3 py-1 text-xs font-semibold rounded-full ${
                         assignment.status === 'active'
-                          ? 'bg-green-100 text-green-800'
+                          ? 'bg-orange-100 text-orange-800 border border-orange-300'
                           : assignment.status === 'completed'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-800'
+                          ? 'bg-orange-200 text-orange-800 border border-orange-300'
+                          : 'bg-gray-100 text-gray-800 border border-gray-300'
                       }`}
                     >
-                      {assignment.status}
+                      {assignment.status.charAt(0).toUpperCase() + assignment.status.slice(1)}
                     </span>
                   </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={() => {
                           setViewingAssignment(assignment)
                           setShowDetailsModal(true)
                         }}
-                        className="text-orange-600 hover:text-orange-800 mr-3 transition-colors font-semibold"
+                        className="px-3 py-1.5 text-xs font-semibold text-orange-600 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors border border-orange-200"
+                        title="View Details"
                       >
                         View
                       </button>
                       {canEdit(user) && (
                         <button
                           onClick={() => handleEdit(assignment)}
-                          className="text-blue-600 hover:text-blue-900 mr-3 transition-colors font-semibold"
+                          className="px-3 py-1.5 text-xs font-semibold text-orange-600 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors border border-orange-200"
+                          title="Edit Assignment"
                         >
                           Edit
                         </button>
@@ -706,18 +744,18 @@ export default function Assignments() {
                       {canDelete(user) && (
                         <button
                           onClick={() => handleDelete(assignment.id)}
-                          className="text-red-600 hover:text-red-900 transition-colors font-semibold"
+                          className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors border border-red-200"
+                          title="Delete Assignment"
                         >
                           Delete
                         </button>
                       )}
-                      {!canEdit(user) && !canDelete(user) && (
-                        <span className="text-gray-400 text-xs">View Only</span>
-                      )}
-                    </td>
+                    </div>
+                  </td>
                 </tr>
               )
-            })}
+            })
+            )}
           </tbody>
         </table>
       </div>
@@ -726,13 +764,13 @@ export default function Assignments() {
         <div className="fixed inset-0 bg-white bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[95vh] overflow-hidden flex flex-col animate-slide-up">
             {/* Header */}
-            <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-8 py-6 text-white">
+            <div className="bg-gradient-to-r from-orange-600 to-orange-700 px-8 py-6 text-white">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-2xl font-bold">
                     {editingAssignment ? 'Edit Assignment' : 'Add New Assignment'}
                   </h3>
-                  <p className="text-purple-100 text-sm mt-1">Assign customer to space</p>
+                  <p className="text-orange-100 text-sm mt-1">Assign customer to space</p>
                 </div>
                 <button
                   onClick={() => {
@@ -767,7 +805,7 @@ export default function Assignments() {
                         required
                         value={formData.customer_id}
                         onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white hover:border-gray-400 text-gray-900 font-medium"
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white hover:border-gray-400 text-gray-900 font-medium"
                       >
                         <option value="">Select Customer</option>
                         {customers.map((customer) => (
@@ -787,7 +825,7 @@ export default function Assignments() {
                         required
                         value={formData.space_id}
                         onChange={(e) => setFormData({ ...formData, space_id: e.target.value })}
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white hover:border-gray-400 text-gray-900 font-medium"
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white hover:border-gray-400 text-gray-900 font-medium"
                       >
                         <option value="">Select Space</option>
                         {spacesToShow.length === 0 ? (
@@ -801,10 +839,10 @@ export default function Assignments() {
                         )}
                       </select>
                       {selectedSpace && (
-                        <div className="mt-2 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                        <div className="mt-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
                           <p className="text-sm text-gray-700">
                             <span className="font-semibold">Billing Cycle:</span>{' '}
-                            <span className="text-purple-700 font-medium capitalize">
+                            <span className="text-orange-700 font-medium capitalize">
                               {getBillingCycle(selectedSpace.type)}
                             </span>
                           </p>
@@ -852,7 +890,7 @@ export default function Assignments() {
                 {/* Agreement Section */}
                 <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                   <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                    <span className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
+                    <span className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
                     Agreement Details
                   </h4>
                   <div className="space-y-4">
@@ -886,7 +924,7 @@ export default function Assignments() {
                 {/* GST & Payment Section */}
                 <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                   <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                    <span className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>
+                    <span className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>
                     GST & Payment Details
                   </h4>
                   <div className="space-y-4">
@@ -896,14 +934,14 @@ export default function Assignments() {
                         id="includes_gst"
                         checked={formData.includes_gst}
                         onChange={(e) => setFormData({ ...formData, includes_gst: e.target.checked })}
-                        className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer"
+                        className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500 cursor-pointer"
                       />
                       <label htmlFor="includes_gst" className="ml-3 text-sm font-semibold text-gray-700 cursor-pointer">
                         Include GST (18%)
                       </label>
                     </div>
                     {formData.includes_gst && monthlyPriceNum > 0 && (
-                      <div className="p-4 bg-green-50 rounded-lg border-2 border-green-200 animate-fade-in">
+                      <div className="p-4 bg-orange-50 rounded-lg border-2 border-orange-200 animate-fade-in">
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-semibold text-gray-700">Base Amount:</span>
@@ -913,13 +951,13 @@ export default function Assignments() {
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-semibold text-gray-700">GST (18%):</span>
-                            <span className="text-base font-bold text-green-700">
+                            <span className="text-base font-bold text-orange-700">
                               {formatCurrency(gstAmount)}
                             </span>
                           </div>
-                          <div className="flex items-center justify-between pt-2 border-t-2 border-green-300">
+                          <div className="flex items-center justify-between pt-2 border-t-2 border-orange-300">
                             <span className="text-lg font-bold text-gray-900">Total with GST:</span>
-                            <span className="text-xl font-bold text-green-800">
+                            <span className="text-xl font-bold text-orange-800">
                               {formatCurrency(totalWithGST)}
                             </span>
                           </div>
@@ -931,7 +969,7 @@ export default function Assignments() {
                       <select
                         value={formData.payment_destination}
                         onChange={(e) => setFormData({ ...formData, payment_destination: e.target.value })}
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white hover:border-gray-400 text-gray-900 font-medium"
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white hover:border-gray-400 text-gray-900 font-medium"
                       >
                         <option value="">Select Payment Destination</option>
                         {destinationOptions.map((option) => (
@@ -947,7 +985,7 @@ export default function Assignments() {
                 {/* Dates & Status Section */}
                 <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                   <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                    <span className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">4</span>
+                    <span className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">4</span>
                     Dates & Status
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -978,7 +1016,7 @@ export default function Assignments() {
                         required
                         value={formData.status}
                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white hover:border-gray-400 text-gray-900 font-medium"
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white hover:border-gray-400 text-gray-900 font-medium"
                       >
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
@@ -1021,7 +1059,7 @@ export default function Assignments() {
                   </button>
                   <button
                     type="submit"
-                    className="px-8 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl hover:from-purple-700 hover:to-purple-800 transition-all duration-200 hover:scale-105 shadow-lg font-semibold flex items-center"
+                    className="px-8 py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl hover:from-orange-700 hover:to-orange-800 transition-all duration-200 hover:scale-105 shadow-lg font-semibold flex items-center"
                   >
                     {editingAssignment ? (
                       <>
@@ -1051,7 +1089,7 @@ export default function Assignments() {
         <div className="fixed inset-0 bg-white bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col animate-slide-up">
             {/* Header */}
-            <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-8 py-6 text-white">
+            <div className="bg-gradient-to-r from-orange-600 to-orange-700 px-8 py-6 text-white">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-2xl font-bold">Assignment Details</h3>
@@ -1081,9 +1119,9 @@ export default function Assignments() {
             <div className="flex-1 overflow-y-auto p-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Customer & Space Information */}
-                <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl p-6 border-2 border-purple-100">
+                <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-6 border-2 border-orange-100">
                   <h4 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                    <span className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">1</span>
+                    <span className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">1</span>
                     Customer & Space
                   </h4>
                   <div className="space-y-3">
@@ -1100,7 +1138,7 @@ export default function Assignments() {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 mb-1">Space</p>
-                      <p className="text-sm font-semibold text-purple-700">
+                      <p className="text-sm font-semibold text-orange-700">
                         {(() => {
                           const space = viewingAssignment.space as Space
                           return space ? `${space.name} (${space.type})` : '-'
@@ -1109,7 +1147,7 @@ export default function Assignments() {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 mb-1">Billing Cycle</p>
-                      <span className="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 capitalize">
+                      <span className="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 capitalize">
                         {(() => {
                           const space = viewingAssignment.space as Space
                           return space ? getBillingCycle(space.type) : 'monthly'
@@ -1120,9 +1158,9 @@ export default function Assignments() {
                 </div>
 
                 {/* Pricing Information */}
-                <div className="bg-gradient-to-br from-green-50 to-white rounded-xl p-6 border-2 border-green-100">
+                <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-6 border-2 border-orange-100">
                   <h4 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                    <span className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
+                    <span className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
                     Pricing Details
                   </h4>
                   <div className="space-y-3">
@@ -1132,7 +1170,7 @@ export default function Assignments() {
                         {viewingAssignment.monthly_price ? formatCurrency(viewingAssignment.monthly_price) : '-'}
                       </p>
                     </div>
-                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-gray-600">Base Amount:</span>
@@ -1142,13 +1180,13 @@ export default function Assignments() {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-gray-600">GST (18%):</span>
-                          <span className={`text-sm font-semibold ${(viewingAssignment as any).includes_gst ? 'text-green-700' : 'text-gray-500'}`}>
+                          <span className={`text-sm font-semibold ${(viewingAssignment as any).includes_gst ? 'text-orange-700' : 'text-gray-500'}`}>
                             {formatCurrency((viewingAssignment as any).includes_gst && viewingAssignment.monthly_price ? viewingAssignment.monthly_price * 0.18 : 0)}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between pt-2 border-t border-green-300">
+                        <div className="flex items-center justify-between pt-2 border-t border-orange-300">
                           <span className="text-sm font-bold text-gray-900">Total Amount:</span>
-                          <span className="text-base font-bold text-green-800">
+                          <span className="text-base font-bold text-orange-800">
                             {formatCurrency(
                               viewingAssignment.monthly_price
                                 ? (viewingAssignment.monthly_price * ((viewingAssignment as any).includes_gst ? 1.18 : 1))
@@ -1167,7 +1205,7 @@ export default function Assignments() {
                     {(viewingAssignment as any).payment_destination && (
                       <div>
                         <p className="text-xs text-gray-500 mb-1">Payment Destination</p>
-                        <p className="text-sm font-semibold text-green-700">
+                        <p className="text-sm font-semibold text-orange-700">
                           {(viewingAssignment as any).payment_destination}
                         </p>
                       </div>
@@ -1177,9 +1215,9 @@ export default function Assignments() {
 
                 {/* Agreement Information */}
                 {(viewingAssignment.agreement_pdf_url || viewingAssignment.agreement_expiry_date) && (
-                  <div className="bg-gradient-to-br from-blue-50 to-white rounded-xl p-6 border-2 border-blue-100 md:col-span-2">
+                  <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-6 border-2 border-orange-100 md:col-span-2">
                     <h4 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                      <span className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>
+                      <span className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>
                       Agreement Information
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1190,7 +1228,7 @@ export default function Assignments() {
                             href={viewingAssignment.agreement_pdf_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-sm text-blue-600 hover:text-blue-800 underline font-semibold"
+                            className="text-sm text-orange-600 hover:text-orange-800 underline font-semibold"
                           >
                             View Agreement PDF
                           </a>
@@ -1247,9 +1285,9 @@ export default function Assignments() {
                       <span
                         className={`inline-block px-3 py-1 text-xs font-semibold rounded-full ${
                           viewingAssignment.status === 'active'
-                            ? 'bg-green-100 text-green-800'
+                            ? 'bg-orange-100 text-orange-800'
                             : viewingAssignment.status === 'completed'
-                            ? 'bg-blue-100 text-blue-800'
+                            ? 'bg-orange-200 text-orange-800'
                             : 'bg-gray-100 text-gray-800'
                         }`}
                       >
@@ -1279,7 +1317,7 @@ export default function Assignments() {
                   setShowDetailsModal(false)
                   setViewingAssignment(null)
                 }}
-                className="px-6 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all duration-200 font-semibold"
+                className="px-6 py-2 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all duration-200 font-semibold"
               >
                 Close
               </button>
